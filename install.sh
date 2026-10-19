@@ -45,9 +45,8 @@ install_docker(){
   else
     info "沿用已存在的 .env"
   fi
-  info "拉取镜像并启动…"
-  docker compose pull || true
-  docker compose up -d
+  info "从源码构建镜像并启动（首次构建需几分钟）…"
+  docker compose up -d --build
   ok "启动完成 → http://localhost:8787"
   info "查看日志：docker compose logs -f artex"
 }

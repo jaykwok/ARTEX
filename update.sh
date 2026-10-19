@@ -27,22 +27,12 @@ update_docker(){
     || die "未检测到 docker / docker compose，请先用 ./install.sh 安装部署"
   [ -f .env ] || die "未找到 .env，请先运行 ./install.sh 完成首次部署"
 
-  # 可选：升级到指定版本 tag（不填则沿用 .env 中的 ARTEX_TAG，缺省为 latest）
-  local tag; tag="$(ask '目标镜像 tag（回车沿用 .env / latest）' '')"
-  if [ -n "$tag" ]; then
-    if grep -q '^ARTEX_TAG=' .env; then
-      sed -i.bak "s|^ARTEX_TAG=.*|ARTEX_TAG=${tag}|" .env && rm -f .env.bak
-    else
-      printf '\nARTEX_TAG=%s\n' "$tag" >> .env
-    fi
-    ok "已将 ARTEX_TAG 设为 ${tag}"
-  fi
-
   # 只动 artex：postgres 是固定的 16-alpine，不需要跟着升级（拉它纯属浪费带宽，
   # 且大版本变动还会有兼容风险）。artex 声明了 depends_on postgres，所以带服务名
   # up 时若 pg 没起会自动拉起，已在跑的则原样保留、不重建。
-  info "拉取新镜像（仅 artex）…"
-  docker compose pull artex
+  # artex 镜像由当前源码本地构建（见 docker-compose.yml），版本即上面 git pull 后的代码。
+  info "从当前源码重建镜像（仅 artex）…"
+  docker compose build artex
   info "重建并启动（artex 重启时自动迁移 schema）…"
   docker compose up -d artex
   ok "更新完成 → http://localhost:8787"

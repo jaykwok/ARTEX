@@ -13,7 +13,7 @@ import (
 
 // Repo 是发布源。写死而不是做成配置项：更新源可配等于给任何能改配置的人一条
 // 远程代码执行通道，对一个渗透测试平台来说这个口子开不得。
-const Repo = "Hinln/ARTEX"
+const Repo = "jaykwok/ARTEX"
 
 // GitHubTokenEnv 只由后端进程读取，不通过前端或配置 API 传递令牌。
 const GitHubTokenEnv = "ARTEX_UPDATE_GITHUB_TOKEN"

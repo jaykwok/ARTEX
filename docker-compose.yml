@@ -15,7 +15,15 @@ services:
     restart: unless-stopped
 
   artex:
-    image: autumn27/artex:${ARTEX_TAG:-latest}
+    # 从本仓库源码本地构建（Dockerfile 的 source stage），不拉取任何第三方预构建镜像。
+    # 原上游镜像 autumn27/artex 已下架，该命名空间若被他人重新注册即可投毒。
+    build:
+      context: .
+      target: source
+      args:
+        ARTEX_VERSION: ${ARTEX_VERSION:-dev}
+    image: artex:local
+    pull_policy: build
     depends_on:
       postgres:
         condition: service_healthy
