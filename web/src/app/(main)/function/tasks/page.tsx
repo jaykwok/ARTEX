@@ -44,7 +44,6 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
-import { AssetInterceptRulesEditor } from "@/components/asset-intercept-rules-editor";
 import { StatusBadge } from "@/components/status-badge";
 import { TablePagination } from "@/components/table-pagination";
 import { TaskLLMProfileChain } from "@/components/task-llm-profile-chain";
@@ -122,7 +121,6 @@ import { api } from "@/lib/api";
 import { getLocalStorageValue, setLocalStorageValue } from "@/lib/local-storage.client";
 import { type SortDirection, useStoredSortPreference } from "@/lib/sort-preference";
 import type {
-  AssetInterceptRuleInput,
   ChatAttachment,
   Company,
   DeleteTaskOptions,
@@ -3087,7 +3085,6 @@ function CreateTaskSheet({
   const [heartbeatMin, setHeartbeatMin] = React.useState("10"); // planner 心跳(分钟);默认10,下限10(与后端一致)
   const [seedFirstIntent, setSeedFirstIntent] = React.useState(false); // 创建时下发种子意图,worker 免等首轮 planner 直接开跑;默认关闭,走标准先规划再执行
   const [coverageEnabled, setCoverageEnabled] = React.useState(true); // 资产覆盖度功能;默认开。关闭=不计算/展示覆盖度、不累积范围、隐藏范围类工具(company 关联不受影响)
-  const [interceptRules, setInterceptRules] = React.useState<AssetInterceptRuleInput[]>([]); // 任务级资产拦截规则(仅本任务生效,不进全局表)
   // 方式1 文件上传:建任务前把文件暂存到 drafts/<draftId>/uploads/,拿回绝对路径追加进描述。
   const [uploading, setUploading] = React.useState(false);
   const [uploadCount, setUploadCount] = React.useState(0);
@@ -3154,9 +3151,6 @@ function CreateTaskSheet({
         seedFirstIntent,
         planHeartbeatSeconds: heartbeatSec,
         coverageEnabled,
-        interceptRules: interceptRules
-          .map((r) => ({ ...r, pattern: r.pattern.trim() }))
-          .filter((r) => r.pattern !== ""),
       });
       toast.success("任务已创建");
       setName("");
@@ -3171,7 +3165,6 @@ function CreateTaskSheet({
       setHeartbeatMin("10");
       setSeedFirstIntent(false);
       setCoverageEnabled(true);
-      setInterceptRules([]);
       setUploadCount(0);
       draftIdRef.current = "";
       setOpen(false);
@@ -3208,14 +3201,12 @@ function CreateTaskSheet({
               description={description}
               goal={goal}
               categoryID={categoryID}
-              interceptRules={interceptRules}
               selectedTemplateID={selectedTemplateID}
               onSelectedTemplateIDChange={setSelectedTemplateID}
               onApply={(template) => {
                 setDescription(template.description);
                 setGoal(template.goal);
                 setCategoryID(template.category_id ?? undefined);
-                setInterceptRules(template.intercept_rules ?? []);
                 setUploadCount(0);
               }}
               portalContainer={sheetContentRef}
@@ -3309,13 +3300,6 @@ function CreateTaskSheet({
               <FieldDescription>
                 创建任务时会将所选企业当前已有资产加入“测试资产”，并将域名、IP、CIDR、ICP 和企业关键词提供给 Agent
                 作为范围上下文；不会自动生成意图或强制改变执行目标。
-              </FieldDescription>
-            </Field>
-            <Field>
-              <FieldLabel htmlFor="task-intercept-rules">任务级资产拦截 / 允许规则（可选）</FieldLabel>
-              <AssetInterceptRulesEditor value={interceptRules} onChange={setInterceptRules} />
-              <FieldDescription>
-                仅对本任务生效，不写入全局规则。判定顺序：先按「拦截」规则（含全局）匹配，命中即禁止测试；未命中且本任务配置了「允许」规则时，须命中某条允许规则才放行，否则同样不允许测试；未配置任何允许规则则不启用白名单。
               </FieldDescription>
             </Field>
             <Field>

@@ -16,14 +16,13 @@ const maxTaskTemplateRequestBytes = 512 << 10
 
 // taskTemplateRequest uses pointers so PATCH can distinguish omitted fields from
 // explicit empty values. Empty values are still rejected by the DB validator.
-// category_id / intercept_rules presence is detected via the raw key set (see
+// category_id presence is detected via the raw key set (see
 // decodeTaskTemplateRequest) so a PATCH can clear category to null.
 type taskTemplateRequest struct {
-	Name           *string                `json:"name"`
-	Description    *string                `json:"description"`
-	Goal           *string                `json:"goal"`
-	CategoryID     *int64                 `json:"category_id"`
-	InterceptRules []taskInterceptRuleReq `json:"intercept_rules"`
+	Name        *string `json:"name"`
+	Description *string `json:"description"`
+	Goal        *string `json:"goal"`
+	CategoryID  *int64  `json:"category_id"`
 }
 
 // decodeTaskTemplateRequest decodes the body into req and returns the set of
@@ -120,17 +119,11 @@ func (s *Server) pgCreateTaskTemplate(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	rules, err := buildTaskInterceptRules(req.InterceptRules)
-	if err != nil {
-		writeErr(w, http.StatusBadRequest, "拦截/允许规则无效："+err.Error())
-		return
-	}
 	template, err := pg.CreateTaskTemplate(db.TaskTemplateInput{
-		Name:           stringValue(req.Name),
-		Description:    stringValue(req.Description),
-		Goal:           stringValue(req.Goal),
-		CategoryID:     req.CategoryID,
-		InterceptRules: rules,
+		Name:        stringValue(req.Name),
+		Description: stringValue(req.Description),
+		Goal:        stringValue(req.Goal),
+		CategoryID:  req.CategoryID,
 	})
 	if err != nil {
 		writeTaskTemplateErr(w, err)
@@ -159,24 +152,14 @@ func (s *Server) pgUpdateTaskTemplate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_, catPresent := present["category_id"]
-	_, rulesPresent := present["intercept_rules"]
-	if req.Name == nil && req.Description == nil && req.Goal == nil && !catPresent && !rulesPresent {
-		writeErr(w, http.StatusBadRequest, "至少需要提供 name、description、goal、category_id 或 intercept_rules")
+	if req.Name == nil && req.Description == nil && req.Goal == nil && !catPresent {
+		writeErr(w, http.StatusBadRequest, "至少需要提供 name、description、goal 或 category_id")
 		return
 	}
 	patch := db.TaskTemplatePatch{Name: req.Name, Description: req.Description, Goal: req.Goal}
 	if catPresent {
 		patch.SetCategoryID = true
 		patch.CategoryID = req.CategoryID
-	}
-	if rulesPresent {
-		rules, err := buildTaskInterceptRules(req.InterceptRules)
-		if err != nil {
-			writeErr(w, http.StatusBadRequest, "拦截/允许规则无效："+err.Error())
-			return
-		}
-		patch.SetInterceptRules = true
-		patch.InterceptRules = rules
 	}
 	template, err := pg.PatchTaskTemplate(id, patch)
 	if err != nil {

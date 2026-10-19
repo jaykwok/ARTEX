@@ -4,6 +4,26 @@
 
 ## [Unreleased]
 
+### 拦截
+
+#### 修改的功能
+
+- **移除资产拦截功能**：删除「系统 → 资产拦截」页及全局黑名单（含内置的 .gov / .gov.cn / .edu / .edu.cn 规则）、任务级拦截 / 允许（白名单）规则、任务模板中的拦截规则，以及 `add_intent` / `insert_assets` 执行前的资产闸门和对应 API。任务模板的预设分类保留。旧库中遗留的 `asset_intercept_rules` / `task_intercept_rules` 表与 `task_templates.intercept_rules` 列不再使用，也不做迁移清理。
+- **移除内置命令拦截规则「删除类接口路径」**：不再种入，其余命令拦截规则不变。
+
+### 账户
+
+#### 修改的功能
+
+- **移除登录前的「使用须知与免责声明」弹窗**，登录不再需要勾选同意。
+
+### 部署
+
+#### 修改的功能
+
+- **一键更新源改为 `jaykwok/ARTEX`**，不再指向第三方 fork。
+- **Docker Compose 改为从源码本地构建镜像**（Dockerfile 新增 `source` stage），不再拉取已下架的 `autumn27/artex`；Release 工作流的镜像改推 `ghcr.io/<仓库所有者>/artex`。
+
 ## [0.3.15] - 2026-10-07
 
 ### 拦截

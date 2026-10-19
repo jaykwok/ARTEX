@@ -617,15 +617,12 @@ CREATE TABLE IF NOT EXISTS task_templates (
     description TEXT NOT NULL,
     goal        TEXT NOT NULL,
     -- 预设的任务分类；分类删除时置空（与 tasks.category_id 一致，不阻断）。
-    category_id     BIGINT REFERENCES task_categories(id) ON DELETE SET NULL,
-    -- 预设的任务级拦截/允许规则快照(AssetInterceptRuleInput 数组)；应用模板时灌进新任务。
-    intercept_rules JSONB NOT NULL DEFAULT '[]',
+    category_id BIGINT REFERENCES task_categories(id) ON DELETE SET NULL,
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 -- 补旧库(已发版,加列带 IF NOT EXISTS)。
 ALTER TABLE task_templates ADD COLUMN IF NOT EXISTS category_id BIGINT REFERENCES task_categories(id) ON DELETE SET NULL;
-ALTER TABLE task_templates ADD COLUMN IF NOT EXISTS intercept_rules JSONB NOT NULL DEFAULT '[]';
 CREATE INDEX IF NOT EXISTS idx_task_templates_updated ON task_templates(updated_at DESC, id DESC);
 DROP TRIGGER IF EXISTS trg_task_templates_upd ON task_templates;
 CREATE TRIGGER trg_task_templates_upd BEFORE UPDATE ON task_templates
@@ -1227,63 +1224,6 @@ CREATE INDEX IF NOT EXISTS idx_side_requests_history ON side_question_requests(s
 -- Additive v3 archive fields; old archives restore these as empty objects.
 ALTER TABLE side_question_sessions ADD COLUMN IF NOT EXISTS memory JSONB NOT NULL DEFAULT '{}';
 ALTER TABLE side_question_requests ADD COLUMN IF NOT EXISTS context_info JSONB NOT NULL DEFAULT '{}';
-
--- =====================================================================
--- 资产拦截规则（全局黑名单）
--- 独立于 §K 命令拦截(intercept_rules)：intercept_rules 匹配工具名/入参文本，
--- 这张表匹配「目标资产」——全等/模糊的域名·IP·URL 以及 CIDR 网段。
--- 仅存规则；具体的匹配/拦截逻辑在别处实现。
--- kind 七种：
---   exact_domain / exact_ip / exact_url  —— 全等匹配
---   fuzzy_domain / fuzzy_ip / fuzzy_url  —— 模糊匹配
---   cidr                                 —— CIDR 网段
--- =====================================================================
-CREATE TABLE IF NOT EXISTS asset_intercept_rules (
-    id          BIGSERIAL PRIMARY KEY,
-    enabled     BOOLEAN NOT NULL DEFAULT true,
-    kind        TEXT NOT NULL CHECK (kind IN (
-                    'exact_domain', 'exact_ip', 'exact_url',
-                    'fuzzy_domain', 'fuzzy_ip', 'fuzzy_url',
-                    'cidr')),
-    pattern     TEXT NOT NULL,
-    note        TEXT NOT NULL DEFAULT '',
-    builtin     BOOLEAN NOT NULL DEFAULT false,
-    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-CREATE INDEX IF NOT EXISTS idx_asset_intercept_enabled ON asset_intercept_rules(enabled);
-DROP TRIGGER IF EXISTS trg_asset_intercept_rules_upd ON asset_intercept_rules;
-CREATE TRIGGER trg_asset_intercept_rules_upd BEFORE UPDATE ON asset_intercept_rules
-    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
-
--- =====================================================================
--- 任务级资产拦截/允许规则
--- 与全局 asset_intercept_rules 同构（kind/pattern/note/enabled），但按 task_id
--- 关联、随任务级联删除；创建任务时录入、任务详情里可编辑。
--- action: 'block'=拦截(禁止测试)  'allow'=允许(白名单)。
--- 执行判定：先按 拦截规则(全局 ∪ 任务block) 匹配，命中即禁止；未命中且该任务存在
--- 启用的 allow 规则时，须命中某条 allow 才放行，否则「不允许测试」。
--- =====================================================================
-CREATE TABLE IF NOT EXISTS task_intercept_rules (
-    id          BIGSERIAL PRIMARY KEY,
-    task_id     BIGINT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
-    enabled     BOOLEAN NOT NULL DEFAULT true,
-    action      TEXT NOT NULL DEFAULT 'block' CHECK (action IN ('block','allow')),
-    kind        TEXT NOT NULL CHECK (kind IN (
-                    'exact_domain', 'exact_ip', 'exact_url',
-                    'fuzzy_domain', 'fuzzy_ip', 'fuzzy_url',
-                    'cidr')),
-    pattern     TEXT NOT NULL,
-    note        TEXT NOT NULL DEFAULT '',
-    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-CREATE INDEX IF NOT EXISTS idx_task_intercept_task ON task_intercept_rules(task_id);
--- 补旧库(本会话早前建过该表、无 action 列)：加列(带 IF NOT EXISTS)。
-ALTER TABLE task_intercept_rules ADD COLUMN IF NOT EXISTS action TEXT NOT NULL DEFAULT 'block';
-DROP TRIGGER IF EXISTS trg_task_intercept_rules_upd ON task_intercept_rules;
-CREATE TRIGGER trg_task_intercept_rules_upd BEFORE UPDATE ON task_intercept_rules
-    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
 -- =====================================================================
 -- M. 漏洞 IM 推送

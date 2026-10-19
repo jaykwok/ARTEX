@@ -55,7 +55,6 @@ export interface TaskTemplate {
   description: string;
   goal: string;
   category_id?: number | null; // 预设分类；null/缺省=无
-  intercept_rules?: AssetInterceptRuleInput[]; // 预设的任务级拦截/允许规则
   created_at: string;
   updated_at: string;
 }
@@ -1267,40 +1266,6 @@ export interface InterceptRule {
   timeout_enabled: boolean;
   timeout_seconds: number;
   timeout_action: "deny" | "allow";
-  created_at: string;
-  updated_at: string;
-}
-
-// ---- Asset Intercept Rules（资产拦截：全局黑名单） ----
-export type AssetInterceptKind =
-  | "exact_domain"
-  | "exact_ip"
-  | "exact_url"
-  | "fuzzy_domain"
-  | "fuzzy_ip"
-  | "fuzzy_url"
-  | "cidr";
-
-// action 仅用于任务级规则：block=拦截(禁止测试) allow=允许(白名单)。
-export type AssetInterceptAction = "block" | "allow";
-
-// 任务级资产拦截/允许规则的录入项（创建任务、任务详情编辑使用）。
-export interface AssetInterceptRuleInput {
-  action: AssetInterceptAction;
-  kind: AssetInterceptKind;
-  pattern: string;
-  note: string;
-  enabled: boolean;
-}
-
-export interface AssetInterceptRule {
-  id: number;
-  enabled: boolean;
-  action?: AssetInterceptAction; // 全局规则不带此字段（恒为拦截）；任务级规则区分 block/allow
-  kind: AssetInterceptKind;
-  pattern: string;
-  note: string;
-  builtin: boolean;
   created_at: string;
   updated_at: string;
 }

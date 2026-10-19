@@ -5,7 +5,6 @@ import * as React from "react";
 import { LibraryIcon, PlusIcon, SaveIcon, Settings2Icon, Trash2Icon } from "lucide-react";
 import { toast } from "sonner";
 
-import { AssetInterceptRulesEditor } from "@/components/asset-intercept-rules-editor";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -33,7 +32,7 @@ import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetT
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
 import { api } from "@/lib/api";
-import type { AssetInterceptRuleInput, TaskCategory, TaskTemplate } from "@/lib/types";
+import type { TaskCategory, TaskTemplate } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 interface TemplateDraft {
@@ -41,11 +40,10 @@ interface TemplateDraft {
   description: string;
   goal: string;
   categoryID: number | null;
-  interceptRules: AssetInterceptRuleInput[];
 }
 
 // TemplateSeed 是「另存为模板」时从创建表单带入的初值。
-type TemplateSeed = Pick<TemplateDraft, "description" | "goal" | "categoryID" | "interceptRules">;
+type TemplateSeed = Pick<TemplateDraft, "description" | "goal" | "categoryID">;
 
 interface TaskTemplateManagerProps {
   open: boolean;
@@ -62,7 +60,6 @@ const emptyDraft = (): TemplateDraft => ({
   description: "",
   goal: "",
   categoryID: null,
-  interceptRules: [],
 });
 
 function templateDraft(template: TaskTemplate): TemplateDraft {
@@ -71,7 +68,6 @@ function templateDraft(template: TaskTemplate): TemplateDraft {
     description: template.description,
     goal: template.goal,
     categoryID: template.category_id ?? null,
-    interceptRules: template.intercept_rules ?? [],
   };
 }
 
@@ -109,7 +105,6 @@ function TaskTemplateManager({
           description: seed.description,
           goal: seed.goal,
           categoryID: seed.categoryID,
-          interceptRules: seed.interceptRules,
         });
       } else if (templates[0]) {
         setSelectedID(templates[0].id);
@@ -146,9 +141,6 @@ function TaskTemplateManager({
       description: draft.description.trim(),
       goal: draft.goal.trim(),
       category_id: draft.categoryID,
-      intercept_rules: draft.interceptRules
-        .map((r) => ({ ...r, pattern: r.pattern.trim() }))
-        .filter((r) => r.pattern !== ""),
     };
     if (!input.name || !input.description || !input.goal) {
       toast.error("请填写模板名称、描述和目标");
@@ -207,7 +199,7 @@ function TaskTemplateManager({
         <SheetContent className="grid h-full w-full! max-w-none! grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden p-0 sm:w-[48rem]! sm:max-w-[48rem]!">
           <SheetHeader className="border-b px-6 py-5">
             <SheetTitle>任务模板管理</SheetTitle>
-            <SheetDescription>模板保存描述、目标、分类与任务级拦截/允许规则；修改不会影响已经创建的任务。</SheetDescription>
+            <SheetDescription>模板保存描述、目标与分类；修改不会影响已经创建的任务。</SheetDescription>
           </SheetHeader>
           <div className="grid min-h-0 overflow-y-auto lg:grid-cols-[15rem_minmax(0,1fr)] lg:overflow-hidden">
             <div className="flex min-h-0 flex-col border-b p-3 lg:border-r lg:border-b-0">
@@ -288,16 +280,6 @@ function TaskTemplateManager({
                   </NativeSelect>
                   <FieldDescription>应用模板时预填此分类（可再改）。</FieldDescription>
                 </Field>
-                <Field>
-                  <FieldLabel>任务级拦截 / 允许规则</FieldLabel>
-                  <AssetInterceptRulesEditor
-                    value={draft.interceptRules}
-                    onChange={(rules) => patchDraft({ interceptRules: rules })}
-                  />
-                  <FieldDescription>
-                    应用模板时预填这些任务级规则（拦截/允许，仅对新任务生效，不进全局）。
-                  </FieldDescription>
-                </Field>
               </FieldGroup>
             </ScrollArea>
           </div>
@@ -348,7 +330,6 @@ interface TaskTemplateControlsProps {
   description: string;
   goal: string;
   categoryID?: number;
-  interceptRules?: AssetInterceptRuleInput[];
   selectedTemplateID: number | null;
   onSelectedTemplateIDChange: (id: number | null) => void;
   onApply: (template: TaskTemplate) => void;
@@ -359,7 +340,6 @@ export function TaskTemplateControls({
   description,
   goal,
   categoryID,
-  interceptRules,
   selectedTemplateID,
   onSelectedTemplateIDChange,
   onApply,
@@ -456,7 +436,6 @@ export function TaskTemplateControls({
                   description,
                   goal,
                   categoryID: categoryID ?? null,
-                  interceptRules: interceptRules ?? [],
                 })
               }
             >

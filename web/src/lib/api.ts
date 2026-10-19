@@ -14,8 +14,6 @@ import type {
   AgentTrigger,
   ArchiveBatchItem,
   Asset,
-  AssetInterceptRule,
-  AssetInterceptRuleInput,
   Audit,
   BatchCategoryItem,
   BatchControlItem,
@@ -259,7 +257,6 @@ export const api = {
     seedFirstIntent?: boolean;
     planHeartbeatSeconds?: number;
     coverageEnabled?: boolean;
-    interceptRules?: AssetInterceptRuleInput[];
   }) =>
     post<Task>("/tasks", {
       name: input.name ?? "",
@@ -273,7 +270,6 @@ export const api = {
       seed_first_intent: input.seedFirstIntent ?? false,
       plan_heartbeat_seconds: input.planHeartbeatSeconds ?? 0, // 0 = 后端归一到默认 600(10min)
       coverage_enabled: input.coverageEnabled ?? true, // 默认开;false=关闭资产覆盖度功能
-      intercept_rules: input.interceptRules ?? [], // 任务级资产拦截规则
     }),
   taskCategories: () => get<{ categories: TaskCategory[] }>("/task-categories").then((r) => arr(r.categories)),
   updateTask: (id: string, input: { name?: string; pinned?: boolean }) => patch<Task>(`/tasks/${id}`, input),
@@ -292,11 +288,11 @@ export const api = {
     }),
   taskTemplates: () => get<{ templates: TaskTemplate[] }>("/task-templates").then((r) => arr(r.templates)),
   createTaskTemplate: (
-    input: Pick<TaskTemplate, "name" | "description" | "goal" | "category_id" | "intercept_rules">,
+    input: Pick<TaskTemplate, "name" | "description" | "goal" | "category_id">,
   ) => post<TaskTemplate>("/task-templates", input),
   updateTaskTemplate: (
     id: number,
-    input: Partial<Pick<TaskTemplate, "name" | "description" | "goal" | "category_id" | "intercept_rules">>,
+    input: Partial<Pick<TaskTemplate, "name" | "description" | "goal" | "category_id">>,
   ) => patch<TaskTemplate>(`/task-templates/${id}`, input),
   deleteTaskTemplate: (id: number) => del<{ deleted: number }>(`/task-templates/${id}`),
   updateTaskLLMProfiles: (id: string, llmProfileIds: number[], activeLLMProfileId?: number) =>
@@ -408,18 +404,6 @@ export const api = {
   // 删除约束。
   deleteConstraint: (id: string, constraintId: string) =>
     del<{ ok: boolean }>(`/tasks/${id}/constraints/${constraintId}`),
-
-  // ---- 任务级资产拦截/允许规则（总览）----
-  taskInterceptRules: (id: string) =>
-    get<{ rules: AssetInterceptRule[] | null }>(`/tasks/${id}/intercept-rules`).then((r) => arr(r.rules)),
-  createTaskInterceptRule: (id: string, rule: AssetInterceptRuleInput) =>
-    post<AssetInterceptRule>(`/tasks/${id}/intercept-rules`, rule),
-  updateTaskInterceptRule: (id: string, ruleId: number, rule: AssetInterceptRuleInput) =>
-    put<AssetInterceptRule>(`/tasks/${id}/intercept-rules/${ruleId}`, rule),
-  deleteTaskInterceptRule: (id: string, ruleId: number) =>
-    del<{ deleted: boolean }>(`/tasks/${id}/intercept-rules/${ruleId}`),
-  toggleTaskInterceptRule: (id: string, ruleId: number, enabled: boolean) =>
-    post<{ ok: boolean; enabled: boolean }>(`/tasks/${id}/intercept-rules/${ruleId}/toggle`, { enabled }),
 
   // 本任务测试范围列表（含继承自来源任务的范围）。
   taskScope: (id: string) => get<{ scope: TaskScopeRow[] }>(`/tasks/${id}/scope`),
@@ -1200,16 +1184,6 @@ export const api = {
   deleteInterceptRule: (id: number) => del<{ deleted: number }>(`/intercept/rules/${id}`),
   toggleInterceptRule: (id: number, enabled: boolean) =>
     post<{ ok: boolean; enabled: boolean }>(`/intercept/rules/${id}/toggle`, { enabled }),
-
-  // ---- asset intercept rules（资产拦截：全局黑名单） ----
-  assetInterceptRules: () => get<{ rules: AssetInterceptRule[] }>("/asset-intercept/rules").then((r) => arr(r.rules)),
-  createAssetInterceptRule: (rule: Pick<AssetInterceptRule, "enabled" | "kind" | "pattern" | "note">) =>
-    post<AssetInterceptRule>("/asset-intercept/rules", rule),
-  updateAssetInterceptRule: (id: number, rule: Pick<AssetInterceptRule, "enabled" | "kind" | "pattern" | "note">) =>
-    put<AssetInterceptRule>(`/asset-intercept/rules/${id}`, rule),
-  deleteAssetInterceptRule: (id: number) => del<{ deleted: number }>(`/asset-intercept/rules/${id}`),
-  toggleAssetInterceptRule: (id: number, enabled: boolean) =>
-    post<{ ok: boolean; enabled: boolean }>(`/asset-intercept/rules/${id}/toggle`, { enabled }),
 
   // ---- intercept pending (ask) ----
   interceptPending: () => get<{ pending: InterceptPending[] }>("/intercept/pending").then((r) => arr(r.pending)),

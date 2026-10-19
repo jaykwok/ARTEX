@@ -276,42 +276,7 @@ ON CONFLICT (name) DO NOTHING`,
 	if err := d.seedDefaultInterceptRulesV2(); err != nil {
 		return fmt.Errorf("seed intercept rules v2: %w", err)
 	}
-	if err := d.seedDefaultInterceptRulesV3(); err != nil {
-		return fmt.Errorf("seed intercept rules v3: %w", err)
-	}
-	if err := d.seedDefaultAssetInterceptRules(); err != nil {
-		return fmt.Errorf("seed asset intercept rules: %w", err)
-	}
 	return nil
-}
-
-// seedDefaultAssetInterceptRules inserts the built-in asset blocklist (fuzzy
-// domain matches for government / education sites) once on first startup. Gated
-// by a settings flag so a user's later disable/delete is never resurrected on
-// restart — same policy as the intercept-rule seed.
-func (d *DB) seedDefaultAssetInterceptRules() error {
-	if v, _, _ := d.GetSetting("asset_intercept_default_rules_v1"); v == "done" {
-		return nil
-	}
-	rules := []struct {
-		kind    string
-		pattern string
-		note    string
-	}{
-		{"fuzzy_domain", ".gov", "[内置] 政府网站 (.gov)"},
-		{"fuzzy_domain", ".gov.cn", "[内置] 政府网站 (.gov.cn)"},
-		{"fuzzy_domain", ".edu", "[内置] 教育网站 (.edu)"},
-		{"fuzzy_domain", ".edu.cn", "[内置] 教育网站 (.edu.cn)"},
-	}
-	for _, r := range rules {
-		if _, err := d.Exec(`
-INSERT INTO asset_intercept_rules(enabled, kind, pattern, note, builtin)
-VALUES (true, $1, $2, $3, true)
-ON CONFLICT DO NOTHING`, r.kind, r.pattern, r.note); err != nil {
-			return fmt.Errorf("asset rule %q: %w", r.pattern, err)
-		}
-	}
-	return d.SetSetting("asset_intercept_default_rules_v1", "done")
 }
 
 // builtinSkillVisibility maps a shipped skill's directory name → the built-in
@@ -580,38 +545,4 @@ ON CONFLICT DO NOTHING`,
 		}
 	}
 	return d.SetSetting("intercept_default_rules_v2", "done")
-}
-
-// seedDefaultInterceptRulesV3 adds the delete-endpoint path rule. The v1 HTTP rules
-// only catch the DELETE *method* (curl -X DELETE, requests.delete(, method:'DELETE'),
-// and v1's path rule covers only /clear /wipe /flush /purge /truncate /drop /destroy
-// /factory-reset /reset-all — so a plain `curl 'http://t/api/user/delete?id=1'` (a
-// delete endpoint reached with GET/POST, which is how most web apps expose deletion)
-// slipped through every built-in rule. Own flag so it also lands on DBs that already
-// ran v1/v2, where editing the v1 seed would have no effect.
-//
-// The pattern deliberately requires a separator after the verb so /delivery,
-// /details, /delta and /delegate do not match, while /deleteAll, /delete_user and
-// /delete-user do. destroy is re-covered here because v1's rule does not allow a
-// suffix (/destroyAll was missed).
-//
-// Exported as a package const only so the seeded regex is unit-testable without a DB.
-const deleteEndpointPathPattern = `(?i)/(?:(?:delete|remove|unlink|erase|destroy)[-\w]*|del)(?:[/?#"'\s]|$)`
-
-func (d *DB) seedDefaultInterceptRulesV3() error {
-	if v, _, _ := d.GetSetting("intercept_default_rules_v3"); v == "done" {
-		return nil
-	}
-	const name = "[内置] 删除类接口路径"
-	if _, err := d.Exec(`
-INSERT INTO intercept_rules(name, enabled, priority, match_target, match_type, pattern, action, message, timeout_enabled, timeout_seconds, timeout_action)
-SELECT $1, true, 80, 'tool_input', 'regex', $2, 'deny', $3, false, 60, 'deny'
-WHERE NOT EXISTS (SELECT 1 FROM intercept_rules WHERE name = $1)`,
-		name,
-		deleteEndpointPathPattern,
-		"禁止调用删除类接口（/delete /remove /unlink /erase 等），不论使用哪种 HTTP 方法——多数应用的删除接口用 GET/POST 就能触发，同样会真实删除目标数据",
-	); err != nil {
-		return fmt.Errorf("rule %q: %w", name, err)
-	}
-	return d.SetSetting("intercept_default_rules_v3", "done")
 }
