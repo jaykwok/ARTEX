@@ -174,7 +174,7 @@ WHERE id=$1`,
 // 会突然收到一批「停用期间积压」的旧漏洞，时效已失且容易误判为新增。
 func (d *DB) SetNotificationChannelEnabled(ctx context.Context, id int64, enabled bool) error {
 	return d.WithEvidenceTx(ctx, func(tx *sql.Tx) error {
-		res, err := tx.ExecContext(ctx, `UPDATE notification_channels SET enabled=$2 WHERE id=$1`, id, enabled)
+		res, err := tx.ExecContext(ctx, `UPDATE notification_channels SET updated_at=now(), enabled=$2 WHERE id=$1`, id, enabled)
 		if err != nil {
 			return err
 		}
@@ -211,17 +211,8 @@ func (d *DB) DeleteNotificationChannel(ctx context.Context, id int64) error {
 // 不跑过滤。事务提交即保证「漏洞落库」与「推送任务存在」原子一致，
 // 不存在提交成功却没入队、消息永久丢失的窗口。
 //
-// 两个关键设计，都不是随手写的：
-//
-//  1. **为什么用 SAVEPOINT**：PostgreSQL 里事务内任一语句报错会让整个事务进入
-//     aborted 状态，此后所有语句（含 COMMIT）一律失败。所以「忽略这条 INSERT
-//     的错误、让调用方继续提交」在 PG 里是做不到的——除非用保存点把错误隔离在
-//     这一条语句上。没有保存点，就只剩「整笔回滚」这一个选项。
-//
-//  2. **为什么整笔回滚是错的**：推送是便利功能，漏洞记录才是产品本身。一个通知
-//     表的问题（旧库未迁移、磁盘瞬时故障）不该让高危漏洞存不进库。所以这里隔离
-//     错误、记日志、返回 false，让漏洞写入照常提交——代价是丢掉这一条推送。
-//     返回 bool 而非 error 是刻意的：调用方不该把它当作会影响写入成败的错误。
+// 保存点明确限定可回滚的通知写入范围。通知失败会记录日志并返回 false，
+// 调用方仍可提交漏洞本身；通知属于尽力投递，不能使漏洞记录丢失。
 func RecordNotificationEventTx(ctx context.Context, tx *sql.Tx, kind string, findingID int64, snap notify.Snapshot) bool {
 	raw, err := json.Marshal(snap)
 	if err != nil {
@@ -262,11 +253,9 @@ func (d *DB) AddNotificationEvent(ctx context.Context, kind string, findingID in
 // FanOutPendingEvents 把尚未分派的漏洞事件按当前启用的渠道展开成投递任务，
 // 返回本轮处理的事件数与新建的投递数。
 //
-// 整轮操作在一个事务里：事件用 FOR UPDATE SKIP LOCKED 领取，多个进程同时跑
-// 也各自领到不同的行（项目里归档队列的领取用的是同一套手法，见
-// db/task_archives.go 的 completeNextArchiveJob）。
+// 整轮操作在一个 IMMEDIATE 事务中领取和标记事件，避免重复分派。
 //
-// 过滤匹配刻意放在 Go 侧而非 SQL：渠道的过滤条件是一组可选字段的 JSONB，
+// 过滤匹配刻意放在 Go 侧而非 SQL：渠道的过滤条件是一组可选字段的 JSON，
 // 用 SQL 表达六种组合的匹配会让查询难以维护，而渠道数量是「人手配的几条」，
 // 全量加载后在内存里逐条比对更快也更好测。
 //
@@ -287,7 +276,7 @@ func (d *DB) FanOutPendingEvents(ctx context.Context, limit int) (eventCount, de
 		return 0, 0, err
 	}
 	rows, err := tx.QueryContext(ctx, `SELECT id, kind, finding_id, snapshot FROM notification_events
-WHERE NOT fanned_out ORDER BY id FOR UPDATE SKIP LOCKED LIMIT $1`, limit)
+WHERE NOT fanned_out ORDER BY id  LIMIT $1`, limit)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -487,7 +476,7 @@ func SetFindingStatusTx(ctx context.Context, tx *sql.Tx, id int64, status string
 		assetIDs                           []byte
 	)
 	scanErr := tx.QueryRowContext(ctx, `SELECT vulnclass, name, severity, summary, task_id, asset_ids, status
-FROM findings WHERE id=$1 FOR UPDATE`, id).
+FROM findings WHERE id=$1 `, id).
 		Scan(&vulnclass, &name, &severity, &summary, &taskID, &assetIDs, &from)
 	if scanErr == sql.ErrNoRows {
 		return "", false, false, false, nil
@@ -541,8 +530,8 @@ func (d *DB) NotificationStatsSnapshot(ctx context.Context) (*NotificationStats,
     (SELECT count(*) FROM notification_channels WHERE enabled),
     (SELECT count(*) FROM notification_deliveries WHERE state IN ($1,$2)),
     (SELECT count(*) FROM notification_deliveries WHERE state=$3),
-    (SELECT count(*) FROM notification_deliveries WHERE state=$4 AND sent_at >= date_trunc('day', now())),
-    COALESCE((SELECT EXTRACT(EPOCH FROM (now() - min(created_at))) * 1000 FROM notification_deliveries WHERE state=$1), 0)::bigint`,
+    (SELECT count(*) FROM notification_deliveries WHERE state=$4 AND sent_at >= strftime('%Y-%m-%d 00:00:00.000+00:00', 'now')),
+    COALESCE((SELECT CAST((julianday(now()) - julianday(min(created_at))) * 86400000 AS INTEGER) FROM notification_deliveries WHERE state=$1), 0)`,
 		NotifyStatePending, NotifyStateSending, NotifyStateFailed, NotifyStateSent).
 		Scan(&s.Channels, &s.ChannelsOn, &s.Pending, &s.Failed, &s.SentToday, &s.BacklogAgeMS); err != nil {
 		return nil, err

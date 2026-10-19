@@ -35,13 +35,7 @@ install_docker(){
   ensure_docker
   if [ ! -f .env ]; then
     cp .env.example .env 2>/dev/null || true
-    local pw key
-    pw="$(ask 'Postgres 密码（回车随机生成）' "$(rand)")"
-    key="$(ask 'ANTHROPIC_API_KEY（可留空，后续在 UI 配）' '')"
-    sed -i.bak "s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=${pw}|" .env
-    sed -i.bak "s|^ANTHROPIC_API_KEY=.*|ANTHROPIC_API_KEY=${key}|" .env
-    rm -f .env.bak
-    ok "已生成 .env（POSTGRES_PASSWORD 已设置）"
+    ok "已生成 .env（SQLite 无需数据库密码，可稍后在 UI 配置 LLM）"
   else
     info "沿用已存在的 .env"
   fi
@@ -53,40 +47,13 @@ install_docker(){
 
 # ── ② 本地编译运行 ──────────────────────────────
 install_local(){
-  echo "数据库安装方式："
-  echo "  1) 连接已有 PostgreSQL"
-  echo "  2) 用 Docker 起一个 PostgreSQL（需要 docker）"
-  case "$(ask '选择' 1)" in
-    2)
-      ensure_docker
-      local pw; pw="$(ask 'Postgres 密码（回车随机）' "$(rand)")"
-      docker run -d --name artex-pg -p 5432:5432 \
-        -e POSTGRES_USER=artex -e POSTGRES_PASSWORD="$pw" -e POSTGRES_DB=artex \
-        -v artex-pg:/var/lib/postgresql/data postgres:16-alpine
-      DB_HOST=127.0.0.1 DB_PORT=5432 DB_USER=artex DB_PASS="$pw" DB_NAME=artex DB_SSL=disable ;;
-    *)
-      DB_HOST="$(ask '数据库地址' 127.0.0.1)"
-      DB_PORT="$(ask '端口' 5432)"
-      DB_USER="$(ask '账号' artex)"
-      DB_PASS="$(ask '密码' '')"
-      DB_NAME="$(ask '数据库名' artex)"
-      DB_SSL="$(ask 'sslmode (disable/require)' disable)" ;;
-  esac
-
-  # 生成 config.json
-  cat > config.json <<JSON
-{
-  "database": {
-    "host": "${DB_HOST}",
-    "port": ${DB_PORT},
-    "user": "${DB_USER}",
-    "password": "${DB_PASS}",
-    "dbname": "${DB_NAME}",
-    "sslmode": "${DB_SSL}"
-  }
-}
-JSON
-  ok "已生成 config.json"
+  info "SQLite 随程序内嵌，无需安装数据库服务。"
+  if [ ! -f config.json ]; then
+    printf '%s\n' '{"database":{"path":"data/artex.sqlite"}}' > config.json
+    ok "已生成 config.json"
+  else
+    info "沿用已有 config.json（数据库配置项为 database.path）。"
+  fi
 
   # go 环境检查
   command -v go >/dev/null 2>&1 || die "未检测到 Go，请先安装 Go（>=1.26）：https://go.dev/dl/"

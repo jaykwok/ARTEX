@@ -12,7 +12,7 @@ import (
 func TestProfileRetryRoundTrip(t *testing.T) {
 	d, err := Open(testDSN(t))
 	if err != nil {
-		t.Skipf("postgres unavailable (%v) — skipping", err)
+		t.Fatalf("SQLite unavailable (%v)", err)
 	}
 	defer d.Close()
 
@@ -69,7 +69,7 @@ func TestProfileRetryRoundTrip(t *testing.T) {
 func TestProfileRetryClampedOnSave(t *testing.T) {
 	d, err := Open(testDSN(t))
 	if err != nil {
-		t.Skipf("postgres unavailable (%v) — skipping", err)
+		t.Fatalf("SQLite unavailable (%v)", err)
 	}
 	defer d.Close()
 
@@ -95,7 +95,7 @@ func TestProfileRetryClampedOnSave(t *testing.T) {
 func TestLLMRetryPolicyRoundTrip(t *testing.T) {
 	d, err := Open(testDSN(t))
 	if err != nil {
-		t.Skipf("postgres unavailable (%v) — skipping", err)
+		t.Fatalf("SQLite unavailable (%v)", err)
 	}
 	defer d.Close()
 

@@ -49,7 +49,7 @@ var logSink = &logSinkT{cap: 3000, subs: map[chan LogLine]struct{}{}, out: os.St
 // (still writing to stderr). Call once at startup, as early as possible.
 func StartLogCapture() { log.SetOutput(logSink) }
 
-// SetDB wires a postgres DB into the sink once (idempotent). It:
+// SetDB wires a SQLite DB into the sink once (idempotent). It:
 //  1. Restores the last 100 log rows from DB into the ring so the /logs page
 //     shows history immediately after restart.
 //  2. Starts an async goroutine that persists every subsequent log line to DB.

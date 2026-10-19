@@ -131,7 +131,7 @@ JOIN notification_channels c ON c.id = dd.channel_id
 WHERE dd.channel_id = $1 AND dd.state IN ($2,$3) AND dd.next_attempt_at <= now()
   AND c.enabled AND c.mode = $4
 ORDER BY dd.next_attempt_at, dd.id
-FOR UPDATE OF dd SKIP LOCKED
+
 LIMIT $5`,
 		args: []any{channelID, NotifyStatePending, NotifyStateSending, NotifyModeRealtime, limit},
 	}, nil)
@@ -153,7 +153,7 @@ func (d *DB) DigestBatchDue(ctx context.Context, channelID int64, minAge time.Du
   JOIN notification_channels c ON c.id = d.channel_id
   WHERE d.channel_id = $1 AND d.state IN ($2,$3) AND c.enabled
   GROUP BY d.channel_id
-  HAVING min(d.created_at) <= now() - make_interval(secs => $4)
+  HAVING min(d.created_at) <= time_add(now(), -$4)
 )`, channelID, NotifyStatePending, NotifyStateSending, int64(minAge.Seconds())).Scan(&due)
 	return due, err
 }
@@ -188,7 +188,7 @@ func (d *DB) ClaimDigestBatch(ctx context.Context, channelID int64, limit int, l
 JOIN notification_channels c ON c.id = dd.channel_id
 WHERE dd.channel_id = $1 AND dd.state IN ($2,$3) AND dd.next_attempt_at <= now() AND c.enabled
 ORDER BY dd.id
-FOR UPDATE OF dd SKIP LOCKED
+
 LIMIT $4`,
 		args: []any{channelID, NotifyStatePending, NotifyStateSending, limit},
 	}, func(tx *sql.Tx, ids []int64) error {
@@ -226,7 +226,7 @@ func (d *DB) claimDeliveries(ctx context.Context, lease time.Duration, cq claimQ
 	// 「租约未到期」与「未到重试时间」因此共用同一个条件表达，不需要新增列。
 	ph, idArgs := placeholders(3, ids)
 	if _, err := tx.ExecContext(ctx, `UPDATE notification_deliveries
-SET state=$1, attempts=attempts+1, next_attempt_at=now()+make_interval(secs => $2)
+SET state=$1, attempts=attempts+1, next_attempt_at=time_add(now(), $2)
 WHERE id IN (`+ph+`)`,
 		append([]any{NotifyStateSending, lease.Seconds()}, idArgs...)...); err != nil {
 		return nil, err
@@ -299,7 +299,7 @@ func (d *DB) RescheduleDeliveries(ctx context.Context, ids []int64, delay time.D
 		return nil
 	}
 	_, err := d.ExecContext(ctx, `UPDATE notification_deliveries
-SET state=$1, next_attempt_at=now()+make_interval(secs => $2), last_error=$3
+SET state=$1, next_attempt_at=time_add(now(), $2), last_error=$3
 WHERE id IN (`+ph+`)`,
 		append([]any{NotifyStatePending, delay.Seconds(), truncateNotifyError(errMsg)}, args...)...)
 	return err
@@ -320,7 +320,7 @@ func (d *DB) DeferDeliveries(ctx context.Context, ids []int64, reason string) er
 		return nil
 	}
 	_, err := d.ExecContext(ctx, `UPDATE notification_deliveries
-SET state=$1, attempts=GREATEST(attempts-1, 0), next_attempt_at=now(), last_error=$2
+SET state=$1, attempts=max(attempts-1, 0), next_attempt_at=now(), last_error=$2
 WHERE id IN (`+ph+`)`,
 		append([]any{NotifyStatePending, truncateNotifyError(reason)}, args...)...)
 	return err

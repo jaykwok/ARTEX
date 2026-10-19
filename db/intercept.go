@@ -85,7 +85,7 @@ RETURNING `+interceptRuleCols,
 func (d *DB) UpdateInterceptRule(id int64, name, matchTarget, matchType, pattern, action, message string, priority int, enabled bool, timeoutEnabled bool, timeoutSeconds int, timeoutAction string) (InterceptRule, error) {
 	row := d.QueryRow(`
 UPDATE intercept_rules
-   SET name=$2, enabled=$3, priority=$4, match_target=$5,
+   SET updated_at=now(), name=$2, enabled=$3, priority=$4, match_target=$5,
        match_type=$6, pattern=$7, action=$8, message=$9,
        timeout_enabled=$10, timeout_seconds=$11, timeout_action=$12
 WHERE id=$1
@@ -102,7 +102,7 @@ func (d *DB) DeleteInterceptRule(id int64) error {
 
 // ToggleInterceptRule flips the enabled state of a rule.
 func (d *DB) ToggleInterceptRule(id int64, enabled bool) error {
-	_, err := d.Exec(`UPDATE intercept_rules SET enabled=$2 WHERE id=$1`, id, enabled)
+	_, err := d.Exec(`UPDATE intercept_rules SET updated_at=now(), enabled=$2 WHERE id=$1`, id, enabled)
 	return err
 }
 

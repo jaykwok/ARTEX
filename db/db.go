@@ -1,175 +1,106 @@
-// Package db is the PostgreSQL data source for ARTEX (取代旧 graph 单文件 SQLite)。
-// 它打开连接、应用 schema、并 seed 内置 agent 与变量目录。
+// Package db owns ARTEX's local SQLite business database.
 package db
 
 import (
 	"context"
 	"database/sql"
 	_ "embed"
-	"errors"
 	"fmt"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/Autumn-27/artex/config"
-	"github.com/jackc/pgx/v5/pgconn"
-	_ "github.com/jackc/pgx/v5/stdlib" // pgx database/sql driver ("pgx")
 )
 
 //go:embed schema.sql
 var schemaSQL string
 
-const schemaMigrationLockKey int64 = 7337741001
+// SQLite serializes writers. All read-then-write transactions start IMMEDIATE,
+// so a competing writer waits before reading instead of failing on lock upgrade.
+// Readers use WAL snapshots on the remaining pooled connections.
+const maxOpenConns = 8
 
-// maxOpenConns 是连接池上限，见 Open 里的说明。取值远低于 PostgreSQL 默认的
-// max_connections=100，同时远高于应用自身的嵌套取连接深度（启动期的 schema
-// advisory lock 会在持有一条连接的同时让 seedBuiltins 另取连接），不会自锁。
-const maxOpenConns = 32
-
-var schemaDeadlockRetryDelays = [...]time.Duration{
-	100 * time.Millisecond,
-	250 * time.Millisecond,
-	500 * time.Millisecond,
-	time.Second,
-}
-
-type schemaExecer interface {
-	ExecContext(context.Context, string, ...any) (sql.Result, error)
-}
-
-func isPostgresDeadlock(err error) bool {
-	var pgErr *pgconn.PgError
-	return errors.As(err, &pgErr) && pgErr.Code == "40P01"
-}
-
-func applySchemaWithRetry(ctx context.Context, execer schemaExecer, sleep func(time.Duration)) error {
-	for attempt := 0; ; attempt++ {
-		if _, err := execer.ExecContext(ctx, schemaSQL); err != nil {
-			if !isPostgresDeadlock(err) || attempt >= len(schemaDeadlockRetryDelays) {
-				return err
-			}
-			sleep(schemaDeadlockRetryDelays[attempt])
-			continue
-		}
-		return nil
-	}
-}
-
-// withSchemaMigrationLock pins the session-level lock to one checked-out
-// connection. Running pg_advisory_lock through *sql.DB is incorrect because a
-// later schema or unlock call may use a different pooled PostgreSQL session.
-func withSchemaMigrationLock(ctx context.Context, sqlDB *sql.DB, action func(*sql.Conn) error) (err error) {
-	conn, err := sqlDB.Conn(ctx)
-	if err != nil {
-		return err
-	}
-	defer conn.Close()
-	if _, err := conn.ExecContext(ctx, `SELECT pg_advisory_lock($1)`, schemaMigrationLockKey); err != nil {
-		return fmt.Errorf("advisory lock: %w", err)
-	}
-	defer func() {
-		if _, unlockErr := conn.ExecContext(context.Background(), `SELECT pg_advisory_unlock($1)`, schemaMigrationLockKey); unlockErr != nil && err == nil {
-			err = fmt.Errorf("advisory unlock: %w", unlockErr)
-		}
-	}()
-	return action(conn)
-}
-
-// coordinateWithSchemaMigration makes long, multi-table archive transactions
-// mutually exclusive with startup DDL while allowing ordinary runtime queries
-// to continue normally.
-func coordinateWithSchemaMigration(tx *sql.Tx) error {
-	if _, err := tx.Exec(`SELECT pg_advisory_xact_lock($1)`, schemaMigrationLockKey); err != nil {
-		return fmt.Errorf("coordinate with schema migration: %w", err)
-	}
-	return nil
-}
-
-// DSN resolves the PostgreSQL connection string and reports where it came from.
-// Precedence: env ARTEX_PG_DSN > config file (config.json). There is no
-// built-in default — it errors if neither source is configured.
-func DSN() (dsn, source string, err error) {
-	return config.PostgresDSN()
-}
-
-// DB wraps the shared *sql.DB. PG handles its own connection pool + concurrency
-// (MVCC), so unlike the old SQLite store there is no process-wide write mutex.
 type DB struct{ *sql.DB }
 
-// ensureDatabase connects to the postgres system database and creates the target
-// database if it does not exist. dsn must be a postgres:// URL.
-func ensureDatabase(dsn string) error {
-	u, err := url.Parse(dsn)
-	if err != nil {
-		return nil // unparseable DSN — let the normal Open fail with a clear error
-	}
-	dbName := strings.TrimPrefix(u.Path, "/")
-	if dbName == "" || dbName == "postgres" {
-		return nil
-	}
-	// connect to the postgres maintenance database instead
-	adminDSN := *u
-	adminDSN.Path = "/postgres"
-	admin, err := sql.Open("pgx", adminDSN.String())
-	if err != nil {
-		return nil // best-effort; let Open surface the real error
-	}
-	defer admin.Close()
-	if err := admin.Ping(); err != nil {
-		return nil
-	}
-	var exists bool
-	_ = admin.QueryRow(`SELECT true FROM pg_database WHERE datname=$1`, dbName).Scan(&exists)
-	if !exists {
-		if _, err := admin.Exec(`CREATE DATABASE "` + dbName + `"`); err != nil {
-			return fmt.Errorf("create database %q: %w", dbName, err)
-		}
-	}
-	return nil
-}
+func DSN() (string, string, error) { return config.SQLitePath() }
 
-// Open connects, applies the schema (idempotent), and seeds builtin rows.
-func Open(dsn string) (*DB, error) {
-	if err := ensureDatabase(dsn); err != nil {
-		return nil, err
+// Open creates the database directory, applies versioned schema and seeds defaults.
+func Open(path string) (*DB, error) {
+	if strings.TrimSpace(path) == "" {
+		return nil, fmt.Errorf("SQLite database path is empty")
 	}
-	sqlDB, err := sql.Open("pgx", dsn)
+	if path != ":memory:" && !strings.HasPrefix(path, "file:") {
+		absolute, err := filepath.Abs(path)
+		if err != nil {
+			return nil, err
+		}
+		path = absolute
+		if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+			return nil, err
+		}
+		// The business store contains credentials. Create it privately, without
+		// truncating an existing file; WAL/SHM inherit SQLite's file permissions.
+		file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0600)
+		if err != nil {
+			return nil, err
+		}
+		if err = file.Close(); err != nil {
+			return nil, err
+		}
+		uriPath := filepath.ToSlash(path)
+		if filepath.VolumeName(path) != "" {
+			uriPath = "/" + uriPath
+		}
+		path = (&url.URL{Scheme: "file", Path: uriPath}).String()
+	}
+	sep := "?"
+	if strings.Contains(path, "?") {
+		sep = "&"
+	}
+	dsn := path + sep + "_pragma=busy_timeout(30000)&_pragma=foreign_keys(1)&_pragma=journal_mode(WAL)&_pragma=synchronous(FULL)&_txlock=immediate"
+	sqlDB, err := sql.Open("artex-sqlite", dsn)
 	if err != nil {
 		return nil, err
 	}
-	// database/sql 默认不限制连接数：池里没有空闲连接时会无条件新建，一路顶到
-	// PostgreSQL 的 max_connections（默认 100）才被拒，于是高峰期的查询拿到的是
-	// `FATAL: sorry, too many clients already` 这种**错误**。封顶之后超额查询改为
-	// 排队等待空闲连接——同样的负载下变成变慢而不是报错，调用方不必再去区分
-	// "读不到"和"没有"。maxOpenConns 要留出余量给 psql / reset-password.sh 以及
-	// 可能并存的其他实例；若 max_connections 调低过，这里也要跟着往下调。
 	sqlDB.SetMaxOpenConns(maxOpenConns)
 	sqlDB.SetMaxIdleConns(maxOpenConns)
-	sqlDB.SetConnMaxLifetime(30 * time.Minute)
-	sqlDB.SetConnMaxIdleTime(5 * time.Minute)
-	if err := sqlDB.Ping(); err != nil {
-		sqlDB.Close()
-		return nil, fmt.Errorf("ping postgres (%s): %w", config.Redact(dsn), err)
+	if path == ":memory:" {
+		sqlDB.SetMaxOpenConns(1)
+		sqlDB.SetMaxIdleConns(1)
 	}
 	d := &DB{sqlDB}
-	// pgx runs multi-statement Exec via the simple protocol when there are no args.
-	// Keep the dedicated lock connection checked out until both DDL and seeding
-	// finish so concurrent application instances cannot initialize out of order.
-	err = withSchemaMigrationLock(context.Background(), sqlDB, func(conn *sql.Conn) error {
-		if err := applySchemaWithRetry(context.Background(), conn, time.Sleep); err != nil {
-			return fmt.Errorf("apply schema: %w", err)
-		}
-		if err := d.seedBuiltins(); err != nil {
-			return fmt.Errorf("seed builtins: %w", err)
-		}
-		return nil
-	})
-	if err != nil {
+	if err = d.initialize(); err != nil {
 		sqlDB.Close()
 		return nil, err
 	}
 	return d, nil
+}
+
+func (d *DB) initialize() error {
+	tx, err := d.BeginTx(context.Background(), nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var version int
+	if err = tx.QueryRow("PRAGMA user_version").Scan(&version); err != nil {
+		return err
+	}
+	if version > 1 {
+		return fmt.Errorf("SQLite schema version %d is newer than this application", version)
+	}
+	if _, err = tx.Exec(schemaSQL + llmRecordsSchema + llmUsageSchema); err != nil {
+		return fmt.Errorf("apply SQLite schema: %w", err)
+	}
+	if _, err = tx.Exec("PRAGMA user_version=1"); err != nil {
+		return err
+	}
+	if err = tx.Commit(); err != nil {
+		return err
+	}
+	return d.seedBuiltins()
 }
 
 // builtinAgent describes one of the fixed agents and its prompt-variable catalog.
@@ -247,7 +178,7 @@ ON CONFLICT (agent_id, var_name) DO UPDATE
 	// ONCE — respects a later user toggle-off (guarded by a settings flag). goals(one-shot
 	// decomposer) stays off. Runs after the column exists (schema applied before seed).
 	if v, _, _ := d.GetSetting("interactive_shell_default_v1"); v != "true" {
-		if _, err := d.Exec(`UPDATE agents SET interactive_shell=true WHERE key IN ('planner','worker','mainagent','auto')`); err != nil {
+		if _, err := d.Exec(`UPDATE agents SET updated_at=now(), interactive_shell=true WHERE key IN ('planner','worker','mainagent','auto')`); err != nil {
 			return fmt.Errorf("seed interactive_shell defaults: %w", err)
 		}
 		_ = d.SetSetting("interactive_shell_default_v1", "true")
@@ -265,8 +196,7 @@ ON CONFLICT (name) DO NOTHING`,
 		return fmt.Errorf("seed browser mcp: %w", err)
 	}
 	// NOTE: the placeholder ScopeSentry data-source MCP (empty URL + empty X-API-Key,
-	// disabled) is seeded directly in schema.sql §F so a raw `psql < schema.sql` init
-	// also gets it. schema.sql is Exec'd on every startup, so it stays idempotent.
+	// disabled) is seeded in schema.sql so a new SQLite store receives it too.
 	if err := d.seedBuiltinSkillVisibility(); err != nil {
 		return fmt.Errorf("seed skill visibility: %w", err)
 	}

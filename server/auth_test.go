@@ -16,7 +16,7 @@ import (
 func TestAuthStatusFailsClosedWhenDataSourceUnavailable(t *testing.T) {
 	m, err := NewManager(t.TempDir(), "")
 	if err != nil {
-		t.Skipf("postgres unavailable (%v)", err)
+		t.Fatalf("SQLite unavailable (%v)", err)
 	}
 	defer m.Close()
 	// 关掉池子，让后续 GetSetting 返回 error 而不是 sql.ErrNoRows。
@@ -42,7 +42,7 @@ func TestAuthStatusFailsClosedWhenDataSourceUnavailable(t *testing.T) {
 func TestAuthInitFailsClosedWhenDataSourceUnavailable(t *testing.T) {
 	m, err := NewManager(t.TempDir(), "")
 	if err != nil {
-		t.Skipf("postgres unavailable (%v)", err)
+		t.Fatalf("SQLite unavailable (%v)", err)
 	}
 	defer m.Close()
 	if err := m.pg.Close(); err != nil {

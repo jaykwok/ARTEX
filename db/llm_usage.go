@@ -28,8 +28,8 @@ type LLMUsage struct {
 
 const llmUsageSchema = `
 CREATE TABLE IF NOT EXISTS llm_usage (
-    id             BIGSERIAL PRIMARY KEY,
-    ts             TIMESTAMPTZ NOT NULL DEFAULT now(),
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts             DATETIME NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%f','now') || '000000+00:00'),
     task_id        TEXT,
     exploration_id BIGINT,
     worker         TEXT,
@@ -54,9 +54,6 @@ func (d *DB) EnsureLLMUsageTable() error {
 		return err
 	}
 	defer tx.Rollback() //nolint:errcheck
-	if err := coordinateWithSchemaMigration(tx); err != nil {
-		return err
-	}
 	if _, err := tx.Exec(llmUsageSchema); err != nil {
 		return err
 	}
@@ -201,10 +198,10 @@ func (d *DB) UsageDaily(days int) ([]ProfileDayUsage, error) {
 	}
 	rows, err := d.Query(`
 SELECT COALESCE(profile_name,'') AS profile_name,
-       to_char(ts AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS day,
+       date(ts) AS day,
        COALESCE(SUM(input_tokens),0), COALESCE(SUM(output_tokens),0), COALESCE(SUM(cache_read),0)
 FROM llm_usage
-WHERE ts >= now() - ($1 * interval '1 day')
+WHERE ts >= time_add(now(), -$1 * 86400)
 GROUP BY profile_name, day
 ORDER BY day`, days)
 	if err != nil {
@@ -299,10 +296,10 @@ WHERE worker = 'judge'`).Scan(&u.Calls, &u.InputTokens, &u.OutputTokens,
 		return JudgeUsage{}, err
 	}
 	rows, err := d.Query(`
-SELECT to_char(ts AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS day,
+SELECT date(ts) AS day,
        COUNT(*), COALESCE(SUM(input_tokens),0), COALESCE(SUM(output_tokens),0)
 FROM llm_usage
-WHERE worker = 'judge' AND ts >= now() - ($1 * interval '1 day')
+WHERE worker = 'judge' AND ts >= time_add(now(), -$1 * 86400)
 GROUP BY day
 ORDER BY day`, days)
 	if err != nil {

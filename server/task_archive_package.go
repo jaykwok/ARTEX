@@ -316,7 +316,7 @@ func (s *taskArchiveRestoreFiles) commit() error {
 }
 
 // recoverTaskArchiveRestoreStages resolves file installs left by an interrupted
-// restore. If PostgreSQL committed, installed files are authoritative and only
+// restore. If SQLite committed, installed files are authoritative and only
 // the extraction directory is stale. Otherwise all completed renames are moved
 // back so the persistent restore job can retry from a clean destination.
 func recoverTaskArchiveRestoreStages(dataDir string, pg *pgdb.DB) error {

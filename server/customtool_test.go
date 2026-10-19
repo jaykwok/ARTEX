@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"os/exec"
 	"strings"
 	"testing"
@@ -84,10 +85,15 @@ func TestShellQuote(t *testing.T) {
 // stdin JSON and the mirrored env var, then print — verifying the whole script
 // param-passing path. Skips if no python3.
 func TestExecPython(t *testing.T) {
-	interp, err := exec.LookPath("python3")
-	if err != nil {
-		t.Skip("python3 unavailable")
+	interp := os.Getenv("ARTEX_TEST_PYTHON")
+	if interp == "" {
+		var err error
+		interp, err = exec.LookPath("python3")
+		if err != nil {
+			t.Skip("python3 unavailable")
+		}
 	}
+
 	code := `import json,sys,os
 a = json.load(sys.stdin)
 print("stdin_target=" + a["target"])

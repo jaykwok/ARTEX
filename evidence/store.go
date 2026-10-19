@@ -13,6 +13,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -107,6 +108,11 @@ func (s *Store) writeBody(r io.Reader, expectedLength int64, expectedHash string
 	if err = os.Rename(f.Name(), path); err != nil {
 		return "", err
 	}
+	// Windows does not expose directory fsync through os.File.Sync. The body
+	// itself was flushed before rename; do not reject a valid stored body.
+	if runtime.GOOS == "windows" {
+		return hash, nil
+	}
 	d, err := os.Open(filepath.Dir(path))
 	if err != nil {
 		return "", err
@@ -118,8 +124,8 @@ func (s *Store) writeBody(r io.Reader, expectedLength int64, expectedHash string
 // StageFindingsExport freezes bindings/report versions and makes private body
 // copies before the HTTP response is started. The caller owns and removes dest.
 func (s *Store) StageFindingsExport(ctx context.Context, findings []*db.DBFinding, dest string, copyBodies bool) error {
-	return s.DB.WithEvidenceTx(ctx, func(tx *sql.Tx) error {
-		var snapshots []db.TrafficEvidenceSnapshot
+	var snapshots []db.TrafficEvidenceSnapshot
+	return s.DB.WithEvidenceReadSnapshot(ctx, func(tx *sql.Tx) error {
 		for _, f := range findings {
 			list, err := db.FindingTrafficTx(tx, f.ID)
 			if err != nil {
@@ -136,6 +142,8 @@ func (s *Store) StageFindingsExport(ctx context.Context, findings []*db.DBFindin
 				snapshots = append(snapshots, b.Snapshot)
 			}
 		}
+		return nil
+	}, func() error {
 		if copyBodies {
 			return s.copySnapshots(snapshots, dest)
 		}
@@ -180,12 +188,9 @@ func (s *Store) prepare(ctx context.Context, refs []db.TrafficRef) ([]db.Prepare
 }
 
 func (s *Store) Record(ctx context.Context, in db.RecordFindingInput, refs []db.TrafficRef) (out *db.RecordedFinding, err error) {
-	err = s.DB.WithEvidenceTx(ctx, func(tx *sql.Tx) error {
+	var prepared []db.PreparedTrafficEvidence
+	err = s.DB.WithPreparedEvidenceTx(ctx, func() error { prepared, err = s.prepare(ctx, refs); return err }, func(tx *sql.Tx) error {
 		if err := db.LockTaskEvidenceTx(tx, in.TaskID); err != nil {
-			return err
-		}
-		prepared, err := s.prepare(ctx, refs)
-		if err != nil {
 			return err
 		}
 		out, err = db.RecordFindingTx(ctx, tx, in, prepared)
@@ -195,12 +200,9 @@ func (s *Store) Record(ctx context.Context, in db.RecordFindingInput, refs []db.
 }
 
 func (s *Store) Bind(ctx context.Context, findingID int64, refs []db.TrafficRef) (out *db.FindingTraffic, err error) {
-	err = s.DB.WithEvidenceTx(ctx, func(tx *sql.Tx) error {
+	var prepared []db.PreparedTrafficEvidence
+	err = s.DB.WithPreparedEvidenceTx(ctx, func() error { prepared, err = s.prepare(ctx, refs); return err }, func(tx *sql.Tx) error {
 		if err := db.LockFindingEvidenceTx(tx, findingID, nil); err != nil {
-			return err
-		}
-		prepared, err := s.prepare(ctx, refs)
-		if err != nil {
 			return err
 		}
 		if err = db.AddFindingTrafficTx(tx, findingID, prepared); err != nil {
@@ -265,7 +267,7 @@ func (s *Store) OpenBody(snapshot db.TrafficEvidenceSnapshot, side string) (*os.
 // CopySnapshots is used by both report downloads and portable task archives.
 // The destination owns real copies, never links into either disposable store.
 func (s *Store) CopySnapshots(ctx context.Context, snapshots []db.TrafficEvidenceSnapshot, dest string) error {
-	return s.DB.WithEvidenceTx(ctx, func(*sql.Tx) error { return s.copySnapshots(snapshots, dest) })
+	return s.DB.WithEvidenceLock(ctx, func() error { return s.copySnapshots(snapshots, dest) })
 }
 
 func (s *Store) copySnapshots(snapshots []db.TrafficEvidenceSnapshot, dest string) error {
@@ -314,7 +316,7 @@ func (s *Store) InstallSnapshots(ctx context.Context, snapshots []db.TrafficEvid
 // WithInstalledSnapshots pins installed bodies until the metadata restore finishes.
 // The callback must not acquire another evidence advisory lock.
 func (s *Store) WithInstalledSnapshots(ctx context.Context, snapshots []db.TrafficEvidenceSnapshot, source string, restore func() error) error {
-	return s.DB.WithEvidenceTx(ctx, func(*sql.Tx) error {
+	return s.DB.WithEvidenceLock(ctx, func() error {
 		for _, v := range snapshots {
 			if v.ID != db.TrafficSnapshotID(v) {
 				return errors.New("归档证据快照元数据哈希不匹配")
@@ -346,11 +348,11 @@ func (s *Store) WithInstalledSnapshots(ctx context.Context, snapshots []db.Traff
 
 func (s *Store) Collect(ctx context.Context, now time.Time) error {
 	return s.DB.WithEvidenceTx(ctx, func(tx *sql.Tx) error {
-		if _, err := tx.Exec(`UPDATE traffic_evidence_snapshots s SET unreferenced_at=$1
+		if _, err := tx.Exec(`UPDATE traffic_evidence_snapshots AS s SET unreferenced_at=$1
 WHERE unreferenced_at IS NULL AND NOT EXISTS(SELECT 1 FROM finding_traffic_bindings b WHERE b.snapshot_id=s.id)`, now); err != nil {
 			return err
 		}
-		if _, err := tx.Exec(`DELETE FROM traffic_evidence_snapshots s WHERE unreferenced_at<$1
+		if _, err := tx.Exec(`DELETE FROM traffic_evidence_snapshots AS s WHERE unreferenced_at<$1
 AND NOT EXISTS(SELECT 1 FROM finding_traffic_bindings b WHERE b.snapshot_id=s.id)`, now.Add(-24*time.Hour)); err != nil {
 			return err
 		}

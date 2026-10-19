@@ -140,7 +140,7 @@ SELECT t.id, t.llm_profile_id, t.active_llm_profile_id, t.llm_chain_revision,
        p.profile_id, p.position, p.status, COALESCE(p.last_error,''), p.exhausted_at
 FROM tasks t
 LEFT JOIN task_llm_profiles p ON p.task_id=t.id
-WHERE t.id=ANY($1::bigint[])
+WHERE t.id IN (SELECT value FROM json_each($1))
 ORDER BY t.id, p.position NULLS LAST`, ids)
 	if err != nil {
 		return err
@@ -193,7 +193,7 @@ ORDER BY t.id, p.position NULLS LAST`, ids)
 	rows, err = d.Query(`
 SELECT task_id, source_task_id
 FROM task_relations
-WHERE task_id=ANY($1::bigint[])
+WHERE task_id IN (SELECT value FROM json_each($1))
 ORDER BY task_id, created_at, source_task_id`, ids)
 	if err != nil {
 		return err
@@ -217,7 +217,7 @@ ORDER BY task_id, created_at, source_task_id`, ids)
 	rows, err = d.Query(`
 SELECT task_id, company_id
 FROM task_scope
-WHERE task_id=ANY($1::bigint[]) AND kind='company' AND company_id IS NOT NULL
+WHERE task_id IN (SELECT value FROM json_each($1)) AND kind='company' AND company_id IS NOT NULL
 ORDER BY task_id, id`, ids)
 	if err != nil {
 		return err
@@ -414,7 +414,7 @@ func (d *DB) ReplaceTaskLLMProfiles(taskID int64, profileIDs []int64, activeProf
 	// DeleteProfile. Inserts below may take KEY SHARE locks on llm_profiles for
 	// their foreign keys, so the task row must be locked before any of them.
 	var lockedID int64
-	if err := tx.QueryRow(`SELECT id FROM tasks WHERE id=$1 AND deleted_at IS NULL FOR UPDATE`, taskID).Scan(&lockedID); err != nil {
+	if err := tx.QueryRow(`SELECT id FROM tasks WHERE id=$1 AND deleted_at IS NULL `, taskID).Scan(&lockedID); err != nil {
 		if err == sql.ErrNoRows {
 			return fmt.Errorf("task %d not found", taskID)
 		}
@@ -476,7 +476,7 @@ func (d *DB) markTaskLLMProfileQuotaExhausted(taskID, profileID, revision int64,
 		active          sql.NullInt64
 		currentRevision int64
 	)
-	if err := tx.QueryRow(`SELECT active_llm_profile_id, llm_chain_revision FROM tasks WHERE id=$1 FOR UPDATE`, taskID).Scan(&active, &currentRevision); err != nil {
+	if err := tx.QueryRow(`SELECT active_llm_profile_id, llm_chain_revision FROM tasks WHERE id=$1 `, taskID).Scan(&active, &currentRevision); err != nil {
 		return out, err
 	}
 	out.PreviousProfileID = profileID

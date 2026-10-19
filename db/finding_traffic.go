@@ -20,19 +20,62 @@ var (
 	ErrEvidenceNotFound = errors.New("流量证据不存在")
 )
 
-// This lock covers the evidence filesystem as well as its SQL references. All
-// processes sharing the database use it, including readers, exports and GC.
-const findingEvidenceLockKey int64 = 7337741004
+// One ARTEX process owns its local files. File-only restore/export operations
+// must exclude evidence GC without reserving SQLite's writer: their callbacks
+// may need to start a separate database transaction.
+var evidenceFilesystemLock = make(chan struct{}, 1)
+
+func (d *DB) WithEvidenceLock(ctx context.Context, fn func() error) error {
+	select {
+	case evidenceFilesystemLock <- struct{}{}:
+		defer func() { <-evidenceFilesystemLock }()
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return fn()
+}
 
 func (d *DB) WithEvidenceTx(ctx context.Context, fn func(*sql.Tx) error) error {
-	tx, err := d.BeginTx(ctx, nil)
+	return d.WithPreparedEvidenceTx(ctx, nil, fn)
+}
+
+// Prepare immutable evidence bodies before reserving SQLite's writer. A failed
+// final validation can leave unreferenced bodies; the existing grace-period GC
+// already handles those just as it handles a failed SQL commit.
+func (d *DB) WithPreparedEvidenceTx(ctx context.Context, prepare func() error, fn func(*sql.Tx) error) error {
+	return d.WithEvidenceLock(ctx, func() error {
+		if prepare != nil {
+			if err := prepare(); err != nil {
+				return err
+			}
+		}
+		return d.evidenceTransaction(ctx, nil, fn)
+	})
+}
+
+// Read metadata from one WAL snapshot, then copy files while excluding GC.
+// The potentially large file copy holds neither a write transaction nor a WAL reader.
+func (d *DB) WithEvidenceReadSnapshot(ctx context.Context, fn func(*sql.Tx) error, files func() error) error {
+	return d.WithEvidenceLock(ctx, func() error {
+		if err := d.evidenceTransaction(ctx, &sql.TxOptions{ReadOnly: true}, fn); err != nil {
+			return err
+		}
+		if files != nil {
+			return files()
+		}
+		return nil
+	})
+}
+
+func (d *DB) evidenceTransaction(ctx context.Context, opts *sql.TxOptions, fn func(*sql.Tx) error) error {
+	tx, err := d.BeginTx(ctx, opts)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
-	if _, err = tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock($1)`, findingEvidenceLockKey); err != nil {
-		return err
-	}
 	if err = fn(tx); err != nil {
 		return err
 	}
@@ -111,7 +154,7 @@ type PreparedTrafficEvidence struct {
 	Snapshot TrafficEvidenceSnapshot
 }
 
-// Normalize makes the snapshot's text columns safe for PostgreSQL. URL and the
+// Normalize makes the snapshot's text columns safe for SQLite. URL and the
 // head blocks come straight off the wire, so a target answering with a non-UTF-8
 // header (a GBK `Content-Disposition: filename=…`, a NUL byte) would otherwise
 // abort the INSERT and roll back the whole finding — losing a confirmed finding
@@ -143,7 +186,7 @@ func LockTaskEvidenceTx(tx *sql.Tx, taskID int64) error {
 		return nil
 	}
 	var deleted sql.NullTime
-	if err := tx.QueryRow(`SELECT deleted_at FROM tasks WHERE id=$1 FOR UPDATE`, taskID).Scan(&deleted); err != nil {
+	if err := tx.QueryRow(`SELECT deleted_at FROM tasks WHERE id=$1 `, taskID).Scan(&deleted); err != nil {
 		return err
 	}
 	if deleted.Valid {
@@ -172,7 +215,7 @@ func LockFindingEvidenceTx(tx *sql.Tx, findingID int64, version *int64) error {
 		return err
 	}
 	var current int64
-	if err := tx.QueryRow(`SELECT evidence_version FROM findings WHERE id=$1 FOR UPDATE`, findingID).Scan(&current); err != nil {
+	if err := tx.QueryRow(`SELECT evidence_version FROM findings WHERE id=$1 `, findingID).Scan(&current); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return ErrFindingNotFound
 		}
@@ -248,7 +291,7 @@ func FindingTrafficTx(tx *sql.Tx, findingID int64) (*FindingTraffic, error) {
 		}
 		return nil, err
 	}
-	rows, err := tx.Query(`SELECT b.id,b.finding_id,b.snapshot_id,b.role,b.note,b.position,b.created_at,to_jsonb(s)
+	rows, err := tx.Query(`SELECT b.id,b.finding_id,b.snapshot_id,b.role,b.note,b.position,b.created_at,json_object('id',s.id,'source_traffic_id',s.source_traffic_id,'captured_at',s.captured_at,'url',s.url,'method',s.method,'status',s.status,'content_type',s.content_type,'req_head',s.req_head,'resp_head',s.resp_head,'req_hash',s.req_hash,'resp_hash',s.resp_hash,'req_len',s.req_len,'resp_len',s.resp_len,'unreferenced_at',strftime('%Y-%m-%dT%H:%M:%fZ',s.unreferenced_at),'created_at',strftime('%Y-%m-%dT%H:%M:%fZ',s.created_at))
 FROM finding_traffic_bindings b JOIN traffic_evidence_snapshots s ON s.id=b.snapshot_id WHERE b.finding_id=$1 ORDER BY b.position,b.id`, findingID)
 	if err != nil {
 		return nil, err
@@ -465,7 +508,7 @@ func (d *DB) SetFindingReportVersionByNodeID(ctx context.Context, nodeID int64, 
 		if err := LockFindingEvidenceTx(tx, id, version); err != nil {
 			return err
 		}
-		res, err := tx.Exec(`UPDATE findings SET report=$2,report_evidence_version=COALESCE($3::bigint,CASE WHEN evidence_version=0 THEN 0 ELSE -1 END) WHERE id=$1`, id, report, version)
+		res, err := tx.Exec(`UPDATE findings SET report=$2,report_evidence_version=COALESCE($3,CASE WHEN evidence_version=0 THEN 0 ELSE -1 END) WHERE id=$1`, id, report, version)
 		if err != nil {
 			return err
 		}

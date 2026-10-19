@@ -64,7 +64,7 @@ func (s *Server) findingGroups(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 500, err.Error())
 		return
 	}
-	// PostgreSQL owns paused/queued persistence. The live engine adds the same
+	// SQLite owns paused/queued persistence. The live engine adds the same
 	// derived running/idle view used by task DTOs, so finding groups do not lag
 	// behind the task list while an Agent is actively executing.
 	if s.engine != nil {

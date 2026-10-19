@@ -1,6 +1,6 @@
 // Package llmrec implements a recording decorator for llm.Provider. It intercepts
 // every Stream call, captures the full request and accumulated response, and
-// persists them to PostgreSQL for later inspection.
+// persists them to SQLite for later inspection.
 package llmrec
 
 import (
@@ -290,7 +290,7 @@ func (r *Recorder) recordUsage(taskID string, expID int64, worker string, usage 
 	}
 }
 
-// record persists one LLM call to PostgreSQL before the provider stream returns.
+// record persists one LLM call to SQLite before the provider stream returns.
 // Keeping the write inside the owning task operation means task deletion can
 // drain calls and then remove records without a late async insert recreating one.
 func (r *Recorder) record(req llm.CompletionRequest, session, taskID, worker, reqBody string, capt *Capture, start time.Time, text, thinking string, usage llm.Usage, stopReason string, streamErr error) {

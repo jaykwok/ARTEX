@@ -303,11 +303,11 @@ func (b *whereBuilder) buildLeaf(e Expr) (string, error) {
 		p := b.next("%" + e.Value + "%")
 		var parts []string
 		for _, col := range fullTextCols {
-			parts = append(parts, col+" ILIKE "+p)
+			parts = append(parts, col+" LIKE "+p)
 		}
 		parts = append(parts,
-			"EXISTS (SELECT 1 FROM unnest(technologies) t(v) WHERE v ILIKE "+p+")",
-			"EXISTS (SELECT 1 FROM unnest(bound_domains) t(v) WHERE v ILIKE "+p+")",
+			"EXISTS (SELECT 1 FROM json_each(technologies) t WHERE t.value LIKE "+p+")",
+			"EXISTS (SELECT 1 FROM json_each(bound_domains) t WHERE t.value LIKE "+p+")",
 		)
 		return "(" + strings.Join(parts, " OR ") + ")", nil
 	}
@@ -318,7 +318,7 @@ func (b *whereBuilder) buildLeaf(e Expr) (string, error) {
 		if err != nil {
 			return "", fmt.Errorf("task_id 需要整数值: %s", e.Value)
 		}
-		return b.next(n) + " = ANY(task_ids)", nil
+		return b.next(n) + " IN (SELECT value FROM json_each(task_ids))", nil
 	}
 
 	// company_id: exact integer
@@ -350,12 +350,12 @@ func (b *whereBuilder) buildLeaf(e Expr) (string, error) {
 	if col, ok := knownArrayFields[f]; ok {
 		switch e.Op {
 		case "==":
-			return b.next(e.Value) + " = ANY(" + col + ")", nil
+			return b.next(e.Value) + " IN (SELECT value FROM json_each(" + col + "))", nil
 		case "!=":
-			return "NOT (" + b.next(e.Value) + " = ANY(" + col + "))", nil
+			return "NOT (" + b.next(e.Value) + " IN (SELECT value FROM json_each(" + col + ")))", nil
 		case "=":
 			p := b.next("%" + e.Value + "%")
-			return "EXISTS (SELECT 1 FROM unnest(" + col + ") t(v) WHERE v ILIKE " + p + ")", nil
+			return "EXISTS (SELECT 1 FROM json_each(" + col + ") t WHERE t.value LIKE " + p + ")", nil
 		default:
 			return "", fmt.Errorf("数组字段 %s 不支持运算符 %s", f, e.Op)
 		}
@@ -365,11 +365,11 @@ func (b *whereBuilder) buildLeaf(e Expr) (string, error) {
 	if col, ok := knownStringFields[f]; ok {
 		switch e.Op {
 		case "=":
-			return col + " ILIKE " + b.next("%"+e.Value+"%"), nil
+			return col + " LIKE " + b.next("%"+e.Value+"%"), nil
 		case "==":
 			return col + " = " + b.next(e.Value), nil
 		case "!=":
-			return col + " NOT ILIKE " + b.next("%"+e.Value+"%"), nil
+			return col + " NOT LIKE " + b.next("%"+e.Value+"%"), nil
 		default:
 			return "", fmt.Errorf("字符串字段 %s 不支持运算符 %s", f, e.Op)
 		}
@@ -495,7 +495,7 @@ func (s *AssetStore) CountDSL(dsl, typ string, taskID int64) (int, error) {
 	}
 	if taskID > 0 {
 		args = append(args, taskID)
-		where += fmt.Sprintf(" AND $%d = ANY(task_ids)", len(args))
+		where += fmt.Sprintf(" AND $%d IN (SELECT value FROM json_each(task_ids))", len(args))
 	}
 	var n int
 	err = s.db.QueryRow("SELECT count(*) FROM assets WHERE "+where, args...).Scan(&n)
@@ -527,7 +527,7 @@ func (s *AssetStore) QueryDSL(dsl, typ string, taskID int64, limit, offset int) 
 	}
 	if taskID > 0 {
 		args = append(args, taskID)
-		where += fmt.Sprintf(" AND $%d = ANY(task_ids)", len(args))
+		where += fmt.Sprintf(" AND $%d IN (SELECT value FROM json_each(task_ids))", len(args))
 	}
 	args = append(args, limit, offset)
 	q := assetSelectCols + " WHERE " + where +

@@ -38,7 +38,7 @@ func newRetestServer(t *testing.T) (*Server, int64) {
 	t.Helper()
 	dsn, _, err := db.DSN()
 	if err != nil {
-		t.Skip("test postgres not configured")
+		t.Fatal("SQLite test database unavailable")
 	}
 	pg, err := db.Open(dsn)
 	if err != nil {

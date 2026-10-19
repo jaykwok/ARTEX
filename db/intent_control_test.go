@@ -11,7 +11,7 @@ import (
 func TestCompareAndSetIntentStateAllowsSingleWinner(t *testing.T) {
 	d, err := Open(testDSN(t))
 	if err != nil {
-		t.Skipf("postgres unavailable (%v) - skipping", err)
+		t.Fatalf("SQLite unavailable (%v)", err)
 	}
 	defer d.Close()
 	expID, err := d.CreateExploration("intent CAS", "only one controller wins")
@@ -61,7 +61,7 @@ func TestCompareAndSetIntentStateAllowsSingleWinner(t *testing.T) {
 func TestCancelIntentPreservesTokenMeteringWithoutDoubleCount(t *testing.T) {
 	d, err := Open(testDSN(t))
 	if err != nil {
-		t.Skipf("postgres unavailable (%v) - skipping", err)
+		t.Fatalf("SQLite unavailable (%v)", err)
 	}
 	defer d.Close()
 	expID, err := d.CreateExploration("cancel token rollup", "preserve consumed tokens")
@@ -169,10 +169,10 @@ func TestCancelIntentPreservesTokenMeteringWithoutDoubleCount(t *testing.T) {
 	}
 	var rollups, datedRollups int
 	if err := d.QueryRow(`SELECT COUNT(*), COUNT(*) FILTER (
-			WHERE metadata->>'token_day'=TO_CHAR(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD')
+			WHERE metadata->>'token_day'=date(created_at)
 		) FROM activity
 		WHERE exploration_id=$1 AND worker='token-ledger' AND kind='result'
-		  AND metadata->>'cancelled_intent_id'=$2`, expID, fmt.Sprint(intentID)).Scan(&rollups, &datedRollups); err != nil {
+		  AND CAST(metadata->>'cancelled_intent_id' AS TEXT)=$2`, expID, fmt.Sprint(intentID)).Scan(&rollups, &datedRollups); err != nil {
 		t.Fatal(err)
 	}
 	if rollups != 3 || datedRollups != rollups {
@@ -229,7 +229,7 @@ func assertDailyTokenBucketsEqual(t *testing.T, got, want map[string]DailyTokenB
 func TestCancelIntentPreservesOutputsYieldedByAnotherIntent(t *testing.T) {
 	d, err := Open(testDSN(t))
 	if err != nil {
-		t.Skipf("postgres unavailable (%v) - skipping", err)
+		t.Fatalf("SQLite unavailable (%v)", err)
 	}
 	defer d.Close()
 	expID, err := d.CreateExploration("shared intent output", "preserve shared facts and findings")

@@ -9,7 +9,7 @@ import "testing"
 func TestProfileMaxTokensRoundTrip(t *testing.T) {
 	d, err := Open(testDSN(t))
 	if err != nil {
-		t.Skipf("postgres unavailable (%v) — skipping", err)
+		t.Fatalf("SQLite unavailable (%v)", err)
 	}
 	// Close via Cleanup, registered FIRST so it runs LAST: cleanups are LIFO, and a
 	// plain `defer d.Close()` would fire before them — the row-deleting cleanups
@@ -77,7 +77,7 @@ func TestProfileMaxTokensRoundTrip(t *testing.T) {
 func TestProfileMaxTokensDefaults(t *testing.T) {
 	d, err := Open(testDSN(t))
 	if err != nil {
-		t.Skipf("postgres unavailable (%v) — skipping", err)
+		t.Fatalf("SQLite unavailable (%v)", err)
 	}
 	// Close via Cleanup, registered FIRST so it runs LAST: cleanups are LIFO, and a
 	// plain `defer d.Close()` would fire before them — the row-deleting cleanups

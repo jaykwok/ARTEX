@@ -82,11 +82,23 @@ func (d *DB) CreateFindingRetest(ctx context.Context, findingID int64, notes str
 	defer tx.Rollback()
 	var title string
 	var snapshot []byte
-	err = tx.QueryRowContext(ctx, `SELECT COALESCE(NULLIF(f.name,''), NULLIF(f.vulnclass,''), '未分类'),
-	jsonb_build_object('finding', to_jsonb(f),
-	 'assets', COALESCE((SELECT jsonb_agg(to_jsonb(a)) FROM assets a WHERE f.asset_ids @> to_jsonb(ARRAY[a.id])), '[]'::jsonb),
-	 'constraints', COALESCE((SELECT jsonb_agg(to_jsonb(c)) FROM task_constraints c JOIN tasks t ON t.exploration_id=c.exploration_id WHERE t.id=f.task_id), '[]'::jsonb))
-	FROM findings f WHERE f.id=$1 FOR UPDATE OF f`, findingID).Scan(&title, &snapshot)
+	err = tx.QueryRowContext(ctx, `SELECT COALESCE(NULLIF(name,''),NULLIF(vulnclass,''),'未分类') FROM findings WHERE id=$1`, findingID).Scan(&title)
+	if err != nil {
+		return nil, nil, false, err
+	}
+	findingRows, _, err := queryJSONRows(tx, `SELECT * FROM findings WHERE id=$1`, findingID)
+	if err != nil {
+		return nil, nil, false, err
+	}
+	assetRows, _, err := queryJSONRows(tx, `SELECT a.* FROM assets a JOIN findings f ON f.id=$1 WHERE a.id IN (SELECT value FROM json_each(f.asset_ids)) ORDER BY a.id`, findingID)
+	if err != nil {
+		return nil, nil, false, err
+	}
+	constraintRows, _, err := queryJSONRows(tx, `SELECT c.* FROM task_constraints c JOIN tasks t ON t.exploration_id=c.exploration_id JOIN findings f ON f.task_id=t.id WHERE f.id=$1 ORDER BY c.id`, findingID)
+	if err != nil {
+		return nil, nil, false, err
+	}
+	snapshot, err = json.Marshal(map[string]json.RawMessage{"finding": firstArchiveRow(findingRows), "assets": assetRows, "constraints": constraintRows})
 	if err != nil {
 		return nil, nil, false, err
 	}
@@ -218,7 +230,7 @@ func (d *DB) FinishFindingRetest(id int64, status, reason string) error {
 	defer tx.Rollback()
 	// Lock the finding before the retest, matching creation and cascading deletion.
 	var findingID int64
-	err = tx.QueryRow(`SELECT f.id FROM findings f WHERE f.id=(SELECT finding_id FROM finding_retests WHERE id=$1) FOR UPDATE OF f`, id).Scan(&findingID)
+	err = tx.QueryRow(`SELECT f.id FROM findings f WHERE f.id=(SELECT finding_id FROM finding_retests WHERE id=$1) `, id).Scan(&findingID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil // Finding/retest already deleted.
 	}

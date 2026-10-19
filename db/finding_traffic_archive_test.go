@@ -6,14 +6,6 @@ import (
 	"testing"
 )
 
-func TestFindingEvidenceLockNamespace(t *testing.T) {
-	for _, reserved := range []int64{7337741001, 7337741002, 7337741003} {
-		if findingEvidenceLockKey == reserved {
-			t.Fatal("evidence lock collides with migration/test/company lock")
-		}
-	}
-}
-
 func TestFindingTrafficLegacyArchiveDefaults(t *testing.T) {
 	d, err := Open(testDSN(t))
 	if err != nil {

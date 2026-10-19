@@ -220,7 +220,7 @@ func markdownText(t *testing.T, body map[string]any) string {
 // agePendingBatch 把该渠道的待发投递催老，用于测试汇总批次到期。
 func (f *notifyFixture) agePendingBatch(t *testing.T, chID int64) {
 	t.Helper()
-	if _, err := f.pg.Exec(`UPDATE notification_deliveries SET created_at = now() - interval '2 hours'
+	if _, err := f.pg.Exec(`UPDATE notification_deliveries SET created_at = time_add(now(), -7200)
 WHERE channel_id=$1 AND state=$2`, chID, db.NotifyStatePending); err != nil {
 		t.Fatal(err)
 	}
@@ -569,7 +569,7 @@ func TestNotifyDeliveriesHistoryAndRetry(t *testing.T) {
 	// 连投到耗尽重试预算。
 	for i := 0; i < db.MaxNotifyAttempts; i++ {
 		f.n.stepRealtime(ctx, ch, 50, "")
-		if _, err := f.pg.Exec(`UPDATE notification_deliveries SET next_attempt_at = now() - interval '1 minute' WHERE channel_id=$1`, chID); err != nil {
+		if _, err := f.pg.Exec(`UPDATE notification_deliveries SET next_attempt_at = time_add(now(), -60) WHERE channel_id=$1`, chID); err != nil {
 			t.Fatal(err)
 		}
 	}

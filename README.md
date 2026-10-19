@@ -4,25 +4,26 @@
 
 AI 自主渗透测试系统（Go 后端 + Next.js 前端）
 
-**v1.0.0** · 基于原版 ARTEX v0.3.15（`e6ec569`）的自维护修改版
+**v1.0.1** · 基于原版 ARTEX v0.3.15（`e6ec569`）的自维护修改版
 
 </div>
 
 ---
 
-## 版本说明（v1.0.0）
+## 自维护版本说明（v1.0.0 起）
 
 本仓库 [`jaykwok/ARTEX`](https://github.com/jaykwok/ARTEX) 是 **ARTEX 的自维护修改版**。自 **v1.0.0** 起单独打标签发布，用于与原始项目的提交和版本号区分。
 
 - **原始版本**：ARTEX **v0.3.15**，对应原始项目提交 [`e6ec569`](https://github.com/Autumn-27/ARTEX/commit/e6ec56999175509551a1e43a3ee3b053d0941bd9)（2026-10-07；原仓库已删除，链接可能返回 404）。`v0.3.15` 及更早的版本号属于原始项目；`e6ec569` 之后提交的内容均为本仓库的修改。
-- **本仓库 v1.0.0**：基于 `e6ec569`，相对原版仅做以下修改，其余功能保持不变：
+- **自维护版本**：**v1.0.0 及之后的所有版本均由本仓库独立维护**，以原版 `e6ec569` 为基础持续开发，当前源码包含以下调整：
+  - 主业务库采用 **SQLite**，流量使用独立 SQLite 库；数据库随 Go 程序内嵌，无需安装 PostgreSQL；
   - 移除**资产拦截**功能：删除「系统 → 资产拦截」页、全局 `.gov` / `.gov.cn` / `.edu` / `.edu.cn` 黑名单、任务级拦截 / 允许规则、任务模板中的拦截规则，以及 `add_intent` / `insert_assets` 执行前的资产闸门与对应 API；
   - 移除内置命令拦截规则「删除类接口路径」，其余命令拦截规则不变；
   - 移除登录前的「使用须知与免责声明」弹窗，登录不再需要勾选同意；
   - 一键更新源改为本仓库 `jaykwok/ARTEX`，Docker Compose 改为从源码本地构建镜像（不再拉取已下架的 `autumn27/artex`）。
 - 完整变更记录见 [CHANGELOG.md](CHANGELOG.md)。
 
-> 下文**安装、使用、配置与架构等章节保留原版 v0.3.15 的说明**，对 v1.0.0 同样适用；涉及更新源与 Docker 构建的差异已按本仓库同步。
+> **从 v1.0.0 开始，所有版本均为本仓库的自维护版本，与原始项目独立发布。** 当前版本按全新 SQLite 实例安装，不提供原 PostgreSQL 数据、配置或旧版部署的兼容及迁移。
 
 ### 恢复到原始版本（v0.3.15 / `e6ec569`）
 
@@ -43,7 +44,7 @@ git checkout e6ec569
 
 原始项目：[Autumn-27/ARTEX](https://github.com/Autumn-27/ARTEX)（原作者已删库，链接可能返回 404）。`v0.3.15` 对应原始提交 `e6ec569`，其提交哈希与本仓库完全一致。
 
-> 回退前建议先备份 `./data` 与数据库。v1.0.0 **不会删除**旧库中资产拦截相关的表和列：旧库可直接回退使用；若用 v1.0.0 新建的库再回退，`e6ec569` 首次启动时也会按原 `schema.sql` 自动补建相关表。
+> 原始版本使用 PostgreSQL。需要运行原始版本时，请单独安装，并使用独立的配置与数据目录。
 
 ---
 
@@ -97,7 +98,7 @@ git checkout e6ec569
 
 ## 安装
 
-> 依赖数据库 **PostgreSQL**；探索需配置 **LLM**（`ANTHROPIC_API_KEY` 或 `OPENAI_API_KEY`，也可在 UI 里配）。
+> 数据库 **SQLite 已内嵌在程序中，无需安装数据库服务**；探索需配置 **LLM**（`ANTHROPIC_API_KEY` 或 `OPENAI_API_KEY`，也可在 UI 里配）。
 
 ### 方式一：一键安装脚本（推荐）
 
@@ -109,8 +110,8 @@ cd ARTEX
 
 脚本会：检测 / 自动安装 Docker → 让你选 **① 全部 Docker** 或 **② 本地编译运行**：
 
-- **① 全部 Docker**：填一个 Postgres 密码（可回车随机）→ 自动写 `.env` → `docker compose up -d`。
-- **② 本地运行**：选数据库（连已有 / 用 Docker 起一个）→ 生成 `config.json` → `go` 编译内嵌单二进制 → 启动。
+- **① 全部 Docker**：自动生成 `.env` → 构建并启动一个 ARTEX 容器。
+- **② 本地运行**：自动使用 `data/artex.sqlite` → `go` 编译内嵌单二进制 → 启动，无需 Docker 或数据库服务。
 
 装好后打开 **http://localhost:8787**（首次进入 `/setup` 设置管理员密码）。
 
@@ -119,8 +120,8 @@ cd ARTEX
 ```bash
 git clone https://github.com/jaykwok/ARTEX.git
 cd ARTEX
-cp .env.example .env          # 填 POSTGRES_PASSWORD、可选 ANTHROPIC_API_KEY
-docker compose up -d --build  # 从源码本地构建 artex 镜像 + 拉 postgres
+cp .env.example .env          # 可选：填写 LLM API Key
+docker compose up -d --build  # 从源码构建并启动 ARTEX，自动创建 SQLite 文件
 # → http://localhost:8787
 ```
 
@@ -136,7 +137,7 @@ docker compose up -d --build  # 从源码本地构建 artex 镜像 + 拉 postgre
 到 [Releases](https://github.com/jaykwok/ARTEX/releases) 下载对应平台的 zip，解压后得到 `artex` + `start.sh`（Windows 为 `start.bat`）+ `skills/` + `config.example.json`：
 
 ```bash
-cp config.example.json config.json   # 填好 database 连接
+# 无需数据库配置；可选：复制 config.example.json 自定义 SQLite 文件路径
 ./start.sh                           # → http://localhost:8787
 ```
 
@@ -161,7 +162,7 @@ CGO_ENABLED=0 go build -tags embedui -o artex ./cmd/artex
 
 ```bash
 ./build.sh --release
-# 产物：dist/artex-1.0.0-*.zip（在 v1.0.0 tag 上构建时）
+# 产物：dist/artex-1.0.1-*.zip（在 v1.0.1 tag 上构建时）
 ```
 
 UPX 自解压二进制可能与部分 Linux 内核、虚拟化环境或安全策略不兼容，因此默认不启用。可用 `ARTEX_TARGETS` 自定义目标；确认目标运行环境兼容时，可显式传入 `--upx` 进一步缩小二进制：
@@ -175,7 +176,7 @@ ARTEX_TARGETS=linux/amd64,windows/amd64 ./build.sh --release
 
 ## 更新升级
 
-> 升级只换程序、不动数据：Postgres 数据卷 `pgdata`、`./data`（jwt.key / SQLite 等）、`./skills` 都会保留。**数据库迁移无需手动执行**——`artex` 每次启动会幂等重跑 `schema.sql`（含 `ADD COLUMN` / `CREATE INDEX IF NOT EXISTS`），即“重启即迁移”。升级前仍建议先备份 `./data` 与数据库。
+> 业务库保存在 `data/artex.sqlite`，流量库、证据和归档保存在 `data/` 的各自目录中。更新程序前请停止 ARTEX 并完整备份 `data/` 与 `skills/`。数据库表结构由程序自动初始化；本自维护版本按全新 SQLite 数据目录使用。
 
 ### 本仓库的私有 Release 更新源
 
@@ -192,11 +193,11 @@ ARTEX_TARGETS=linux/amd64,windows/amd64 ./build.sh --release
 
 本地直接启动时，`start.sh` 不会自动读取 `.env`；必须将变量导出到进程环境。Docker Compose 部署从源码本地构建镜像，版本号缺省为 `dev`，而 `dev` 构建会禁用页面一键更新——Docker 下请用 `./update.sh` 或 `git pull && docker compose up -d --build artex` 升级。
 
-需要先在本仓库发布非 draft、非 prerelease 的正式 Release，并附上 `artex-<版本>-<os>-<arch>.zip` 和 `SHA256SUMS`，页面才能提供可安装更新。仓库里只有源码时还不能在线升级。现有 Release 工作流会在推送 `v*` tag 时为当前仓库生成这些附件，例如发布 v1.0.0：
+需要先在本仓库发布非 draft、非 prerelease 的正式 Release，并附上 `artex-<版本>-<os>-<arch>.zip` 和 `SHA256SUMS`，页面才能提供可安装更新。仓库里只有源码时还不能在线升级。现有 Release 工作流会在推送 `v*` tag 时为当前仓库生成这些附件，例如发布 v1.0.1：
 
 ```bash
-git tag -a v1.0.0 -m "ARTEX v1.0.0"
-git push origin v1.0.0
+git tag -a v1.0.1 -m "ARTEX v1.0.1"
+git push origin v1.0.1
 ```
 
 ### 方式一：页面一键更新（推荐）
@@ -228,7 +229,7 @@ cd ARTEX
 
 ```bash
 cd ARTEX
-git pull                       # 拉取最新源码（可 git checkout v1.0.0 固定版本；原始版本用 e6ec569）
+git pull                       # 拉取最新源码（可 git checkout v1.0.1 固定版本；原始版本用 e6ec569）
 docker compose build artex     # 从源码本地重建镜像
 docker compose up -d artex     # 换新镜像重启 → 自动迁移 schema
 docker image prune -f          # 清理旧镜像（可选）
@@ -257,17 +258,19 @@ CGO_ENABLED=0 go build -tags embedui -o artex ./cmd/artex
 
 ## 配置
 
-**数据库**（`config.json`，或用环境变量 `ARTEX_PG_DSN` 覆盖）：
+**数据库**：默认自动创建数据目录中的 `artex.sqlite`；无需配置。`-data` 可修改整个数据目录。可通过 `ARTEX_DB_PATH` 或 `config.json` 单独覆盖业务库路径（相对路径相对启动工作目录）：
 
 ```json
 {
-  "database": {
-    "host": "127.0.0.1", "port": 5432,
-    "user": "artex", "password": "yourpass",
-    "dbname": "artex", "sslmode": "disable"
-  }
+  "database": { "path": "data/artex.sqlite" }
 }
 ```
+
+支持本机单个 ARTEX 后端实例；数据库文件保存在本地磁盘。备份前停止 ARTEX，再复制整个 `data/`（包括存在的 `-wal`/`-shm`、流量、证据和归档），不要在运行中只复制业务库主文件。
+
+任务归档还原时，LLM 历史按批次提交，读取归档文件时不占用业务库写锁。导入进度随批次持久化，失败重试或进程重启后可从已提交位置继续；任务在所有数据还原成功前保持归档状态。SQLite 仍为单写入者，单条特别大的记录及最后的任务元数据事务仍可能短暂占用写锁。
+
+归档还原未完成时（包括失败及等待重试），不能删除该任务或其 LLM 历史；保护持续到归档包消费完成。完成还原前会在同一事务中核对实际记录数与记录 ID 摘要，发现数据缺失或 ID 不一致则还原失败并保留归档包。
 
 **LLM**：`export ANTHROPIC_API_KEY=sk-...`（或 `OPENAI_API_KEY`），也可在 UI 的「LLM 配置」页填写。
 可选：`ARTEX_LLM_PROVIDER` / `ARTEX_LLM_MODEL` / `ARTEX_LLM_BASE_URL` / `ARTEX_LLM_PROXY`。
@@ -336,7 +339,7 @@ server {
 
 ## 系统技术架构
 
-ARTEX 是一套 **LLM 多 agent 驱动的自主渗透系统**：Go 单体后端（内嵌 Next.js 前端）+ PostgreSQL，agent 能力由 `norma` SDK 提供（`agentcore` / `tool` / `permission` / `harness` / `memory` / `transcript`）。核心是**双图架构**，以及围绕它的两条自主性机制：**worker 间过程级信息交换**与 **planner 多轮共享 todolist 稳定攻击链路**。
+ARTEX 是一套 **LLM 多 agent 驱动的自主渗透系统**：Go 单体后端（内嵌 Next.js 前端）+ SQLite，agent 能力由 `norma` SDK 提供（`agentcore` / `tool` / `permission` / `harness` / `memory` / `transcript`）。核心是**双图架构**，以及围绕它的两条自主性机制：**worker 间过程级信息交换**与 **planner 多轮共享 todolist 稳定攻击链路**。
 
 ### 总体分层
 
@@ -356,7 +359,7 @@ flowchart TB
     WK["worker　执行者 ×N"]
     MA["mainagent　人在环路"]
   end
-  subgraph DB["PostgreSQL"]
+  subgraph DB["SQLite"]
     AGRAPH["资产图　assets / companies / task_scope"]
     EGRAPH["探索图　exploration_nodes / anchors / activity"]
   end
@@ -391,7 +394,7 @@ flowchart TB
 | **server** | `net/http` 路由 + JWT 鉴权 + SSE；`Manager` 托管任务、引擎、DB store 的生命周期 |
 | **engine** | 每任务一个 `plannerLoop` + N 个 worker goroutine；意图领取、超时/暂停/drain |
 | **agent** | goals / planner / worker / mainagent，`ToolSet` 把双图暴露成 LLM 工具 |
-| **db** | 双图的 Postgres 落地（pgx）；schema 随 `go:embed` 每次启动幂等建表 |
+| **db** | 双图与业务数据的 SQLite 存储（纯 Go）；WAL、外键、短写事务及版本化 schema |
 | **支撑** | 记录型 MITM 代理、审批门、异步补全、MCP/技能/记忆/报告 |
 
 ### 双图架构：探索图 + 资产图

@@ -123,7 +123,7 @@ func TestSideHTTPPreparationCancellationAndClear(t *testing.T) {
 				t.Fatalf("cancel usage: %+v", row)
 			}
 			var memory string
-			if err = f.m.pg.QueryRow(`SELECT memory::text FROM side_question_sessions WHERE session_key=$1`, p.Key()).Scan(&memory); err != nil || memory != "{}" {
+			if err = f.m.pg.QueryRow(`SELECT CAST(memory AS TEXT) FROM side_question_sessions WHERE session_key=$1`, p.Key()).Scan(&memory); err != nil || memory != "{}" {
 				t.Fatalf("late summary saved: %s %v", memory, err)
 			}
 		})
@@ -142,7 +142,7 @@ func newSideHTTPFixture(t *testing.T) *sideHTTPFixture {
 	t.Helper()
 	m, err := NewManager(t.TempDir(), "")
 	if err != nil {
-		t.Skipf("postgres unavailable (%v) — skipping", err)
+		t.Fatalf("SQLite unavailable (%v)", err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	s := &Server{m: m, engine: NewEngine(m), ctx: ctx, jwtKey: []byte("btw-test-signing-key-only"), chatBusy: map[string]bool{}}

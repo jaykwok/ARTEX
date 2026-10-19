@@ -20,11 +20,11 @@ func lockSideParent(ctx context.Context, tx *sql.Tx, p sidequestion.Parent) erro
 	var id int64
 	var err error
 	if p.ConversationID > 0 {
-		err = tx.QueryRowContext(ctx, `SELECT id FROM conversations WHERE id=$1 FOR SHARE`, p.ConversationID).Scan(&id)
+		err = tx.QueryRowContext(ctx, `SELECT id FROM conversations WHERE id=$1`, p.ConversationID).Scan(&id)
 	} else {
-		err = tx.QueryRowContext(ctx, `SELECT id FROM tasks WHERE id=$1 AND exploration_id=$2 AND deleted_at IS NULL AND archived_at IS NULL FOR SHARE`, p.TaskID, p.ExplorationID).Scan(&id)
+		err = tx.QueryRowContext(ctx, `SELECT id FROM tasks WHERE id=$1 AND exploration_id=$2 AND deleted_at IS NULL AND archived_at IS NULL`, p.TaskID, p.ExplorationID).Scan(&id)
 		if err == nil && p.IntentID > 0 {
-			err = tx.QueryRowContext(ctx, `SELECT id FROM exploration_nodes WHERE id=$1 AND exploration_id=$2 AND kind='intent' AND state<>'stopped' FOR SHARE`, p.IntentID, p.ExplorationID).Scan(&id)
+			err = tx.QueryRowContext(ctx, `SELECT id FROM exploration_nodes WHERE id=$1 AND exploration_id=$2 AND kind='intent' AND state<>'stopped'`, p.IntentID, p.ExplorationID).Scan(&id)
 		}
 	}
 	if errors.Is(err, sql.ErrNoRows) {
@@ -56,7 +56,7 @@ func (d *DB) SaveSideSnapshot(ctx context.Context, s sidequestion.Snapshot) erro
 	_, err = tx.ExecContext(ctx, `INSERT INTO side_question_sessions(session_key,conversation_id,task_id,exploration_id,intent_id,run_id,version,snapshot)
 VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT(session_key) DO UPDATE SET run_id=EXCLUDED.run_id,version=EXCLUDED.version,snapshot=EXCLUDED.snapshot
 WHERE (side_question_sessions.run_id,side_question_sessions.version)<(EXCLUDED.run_id,EXCLUDED.version)`,
-		s.Parent.Key(), nullableSideID(s.Parent.ConversationID), nullableSideID(s.Parent.TaskID), nullableSideID(s.Parent.ExplorationID), nullableSideID(s.Parent.IntentID), s.RunID, s.Version, string(jsonbClean(b)))
+		s.Parent.Key(), nullableSideID(s.Parent.ConversationID), nullableSideID(s.Parent.TaskID), nullableSideID(s.Parent.ExplorationID), nullableSideID(s.Parent.IntentID), s.RunID, s.Version, string(cleanJSON(b)))
 	if err != nil {
 		return err
 	}
@@ -121,7 +121,7 @@ func (d *DB) CurrentSideRequest(ctx context.Context, key string) (*sidequestion.
 }
 
 func (d *DB) SideHistory(ctx context.Context, key string, before int64, limit int) ([]sidequestion.Exchange, error) {
-	rows, err := d.QueryContext(ctx, `SELECT `+sideCols+` FROM side_question_requests WHERE session_key=$1 AND ($2::bigint=0 OR ordinal<$2) ORDER BY ordinal DESC LIMIT $3`, key, before, limit)
+	rows, err := d.QueryContext(ctx, `SELECT `+sideCols+` FROM side_question_requests WHERE session_key=$1 AND ($2=0 OR ordinal<$2) ORDER BY ordinal DESC LIMIT $3`, key, before, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -167,7 +167,7 @@ func (d *DB) StartSideRequest(ctx context.Context, s sidequestion.Snapshot, clie
 		return nil, false, err
 	}
 	var generation int64
-	if err = tx.QueryRowContext(ctx, `SELECT generation FROM side_question_sessions WHERE session_key=$1 FOR UPDATE`, s.Parent.Key()).Scan(&generation); err != nil {
+	if err = tx.QueryRowContext(ctx, `SELECT generation FROM side_question_sessions WHERE session_key=$1 `, s.Parent.Key()).Scan(&generation); err != nil {
 		return nil, false, err
 	}
 	e, err := scanSide(tx.QueryRowContext(ctx, `SELECT `+sideCols+` FROM side_question_requests WHERE session_key=$1 AND generation=$2 AND client_id=$3`, s.Parent.Key(), generation, clientID))
@@ -209,7 +209,7 @@ func (d *DB) UpdateSideRequest(ctx context.Context, e sidequestion.Exchange) (bo
 	if err != nil {
 		return false, err
 	}
-	r, err := d.ExecContext(ctx, `UPDATE side_question_requests r SET answer=$2,status=$3,error=$4,sequence=$5,usage=$6,context_info=$7
+	r, err := d.ExecContext(ctx, `UPDATE side_question_requests AS r SET answer=$2,status=$3,error=$4,sequence=$5,usage=$6,context_info=$7
 WHERE r.id=$1 AND r.status='running' AND r.sequence<$5 AND EXISTS(SELECT 1 FROM side_question_sessions s WHERE s.session_key=r.session_key AND s.generation=r.generation)`, e.ID, e.Answer, e.Status, e.Error, e.Sequence, string(usage), string(info))
 	if err != nil {
 		return false, err
@@ -270,7 +270,7 @@ func (d *DB) SaveSideMemory(ctx context.Context, e sidequestion.Exchange, memory
 	if err != nil {
 		return err
 	}
-	result, err := d.ExecContext(ctx, `UPDATE side_question_sessions s SET memory=$3 WHERE s.session_key=$1 AND s.generation=$2
+	result, err := d.ExecContext(ctx, `UPDATE side_question_sessions AS s SET memory=$3 WHERE s.session_key=$1 AND s.generation=$2
 AND EXISTS(SELECT 1 FROM side_question_requests r WHERE r.id=$4 AND r.session_key=s.session_key AND r.generation=s.generation AND r.status='running')`, e.SessionKey, e.Generation, string(raw), e.ID)
 	if err != nil {
 		return err

@@ -76,7 +76,7 @@ VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING `+triggerC
 
 // UpdateTrigger updates a trigger's fields (not last_fire).
 func (d *DB) UpdateTrigger(t *AgentTrigger) error {
-	_, err := d.Exec(`UPDATE agent_triggers SET enabled=$2, interval_sec=$3, on_finding=$4, on_goal_met=$5, on_task_timeout=$6, on_tool_call=$7, on_task_create=$8, interval_message=$9, finding_message=$10, goal_message=$11, task_timeout_message=$12, tool_call_message=$13, task_create_message=$14, tool_names=$15 WHERE id=$1`,
+	_, err := d.Exec(`UPDATE agent_triggers SET updated_at=now(), enabled=$2, interval_sec=$3, on_finding=$4, on_goal_met=$5, on_task_timeout=$6, on_tool_call=$7, on_task_create=$8, interval_message=$9, finding_message=$10, goal_message=$11, task_timeout_message=$12, tool_call_message=$13, task_create_message=$14, tool_names=$15 WHERE id=$1`,
 		t.ID, t.Enabled, t.IntervalSec, t.OnFinding, t.OnGoalMet, t.OnTaskTimeout, t.OnToolCall, t.OnTaskCreate,
 		t.IntervalMessage, t.FindingMessage, t.GoalMessage, t.TaskTimeoutMessage, t.ToolCallMessage, t.TaskCreateMessage, marshalToolNames(t.ToolNames))
 	return err
@@ -117,7 +117,7 @@ func (d *DB) queryTriggers(q string, args ...any) ([]*AgentTrigger, error) {
 
 // TouchTriggerFire records an interval trigger's fire time (now).
 func (d *DB) TouchTriggerFire(id int64) error {
-	_, err := d.Exec(`UPDATE agent_triggers SET last_fire=now() WHERE id=$1`, id)
+	_, err := d.Exec(`UPDATE agent_triggers SET updated_at=now(), last_fire=now() WHERE id=$1`, id)
 	return err
 }
 

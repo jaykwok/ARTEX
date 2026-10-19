@@ -76,7 +76,7 @@ func (s *Server) seedFindingWorkflowTools() {
 			}
 		}
 		raw, _ := json.Marshal(schema)
-		result, err := s.m.pg.Exec(`UPDATE tools SET schema=$2::jsonb,updated_at=now() WHERE key=$1 AND system AND schema=$3::jsonb`, key, string(raw), string(row.Schema))
+		result, err := s.m.pg.Exec(`UPDATE tools SET schema=$2,updated_at=now() WHERE key=$1 AND system AND schema=$3`, key, string(raw), string(row.Schema))
 		if err != nil {
 			log.Printf("[evidence] upgrade %s: %v", key, err)
 			return
@@ -89,15 +89,15 @@ func (s *Server) seedFindingWorkflowTools() {
 	// flags survive; the one-time flag also preserves future user unbinding.
 	readers := `["worker","reporter"]`
 	for _, key := range []string{"traffic_search", "traffic_get", "traffic_blob"} {
-		if _, err := s.m.pg.Exec(`UPDATE tools SET agents=$2::jsonb WHERE key=$1 AND system AND (agents='["worker"]'::jsonb OR (agents @> '["worker","planner","mainagent","auto","pentest"]'::jsonb AND jsonb_array_length(agents)=5))`, key, readers); err != nil {
+		if _, err := s.m.pg.Exec(`UPDATE tools SET updated_at=now(), agents=$2 WHERE key=$1 AND system AND (agents='["worker"]' OR (NOT EXISTS(SELECT value FROM json_each('["worker","planner","mainagent","auto","pentest"]') EXCEPT SELECT value FROM json_each(agents)) AND json_array_length(agents)=5))`, key, readers); err != nil {
 			return
 		}
 	}
-	if _, err := s.m.pg.Exec(`UPDATE tools SET agents=$1::jsonb WHERE key='get_finding_traffic' AND system AND agents @> '["auto","reporter"]'::jsonb AND jsonb_array_length(agents)=2`, `["auto","reporter","worker","planner","mainagent","pentest"]`); err != nil {
+	if _, err := s.m.pg.Exec(`UPDATE tools SET updated_at=now(), agents=$1 WHERE key='get_finding_traffic' AND system AND NOT EXISTS(SELECT value FROM json_each('["auto","reporter"]') EXCEPT SELECT value FROM json_each(agents)) AND json_array_length(agents)=2`, `["auto","reporter","worker","planner","mainagent","pentest"]`); err != nil {
 		return
 	}
 	// Replace the previous code default only; preserve customized binding lists.
-	if _, err := s.m.pg.Exec(`UPDATE tools SET agents='["reporter"]'::jsonb WHERE key='bind_finding_traffic' AND system AND agents @> '["worker","planner","mainagent","auto","pentest"]'::jsonb AND jsonb_array_length(agents)=5`); err != nil {
+	if _, err := s.m.pg.Exec(`UPDATE tools SET updated_at=now(), agents='["reporter"]' WHERE key='bind_finding_traffic' AND system AND NOT EXISTS(SELECT value FROM json_each('["worker","planner","mainagent","auto","pentest"]') EXCEPT SELECT value FROM json_each(agents)) AND json_array_length(agents)=5`); err != nil {
 		return
 	}
 	if err := s.m.pg.AddAgentToToolBinding("reporter", []string{"bind_finding_traffic"}); err != nil {

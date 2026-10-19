@@ -11,7 +11,7 @@ import (
 func TestSkillUsageLedger(t *testing.T) {
 	d, err := Open(testDSN(t))
 	if err != nil {
-		t.Skipf("postgres unavailable (%v) — skipping", err)
+		t.Fatalf("SQLite unavailable (%v)", err)
 	}
 	defer d.Close()
 

@@ -119,7 +119,7 @@ func TestChatMentionPagination(t *testing.T) {
 func TestChatMentionWorkerReceivesServerDetails(t *testing.T) {
 	m, err := NewManager(t.TempDir(), "")
 	if err != nil {
-		t.Skipf("postgres unavailable (%v) — skipping", err)
+		t.Fatalf("SQLite unavailable (%v)", err)
 	}
 	defer m.Close()
 	ctx, cancel := context.WithCancel(context.Background())

@@ -36,7 +36,7 @@ func TestCompanyScopeInputsAcceptStructuredAndLegacyRules(t *testing.T) {
 func TestCreateCompanyRejectsNormalizedDuplicateWithoutChangingScope(t *testing.T) {
 	m, err := NewManager(t.TempDir(), "")
 	if err != nil {
-		t.Skipf("postgres unavailable (%v)", err)
+		t.Fatalf("SQLite unavailable (%v)", err)
 	}
 	defer m.Close()
 
@@ -76,7 +76,7 @@ func TestCreateCompanyRejectsNormalizedDuplicateWithoutChangingScope(t *testing.
 func TestDeleteCompanyRefreshesLiveTaskCompanyIDs(t *testing.T) {
 	m, err := NewManager(t.TempDir(), "")
 	if err != nil {
-		t.Skipf("postgres unavailable (%v)", err)
+		t.Fatalf("SQLite unavailable (%v)", err)
 	}
 	defer m.Close()
 
@@ -117,7 +117,7 @@ func TestDeleteCompanyRefreshesLiveTaskCompanyIDs(t *testing.T) {
 func TestCompanyScopeHTTPErrorClassificationAndBounds(t *testing.T) {
 	m, err := NewManager(t.TempDir(), "")
 	if err != nil {
-		t.Skipf("postgres unavailable (%v)", err)
+		t.Fatalf("SQLite unavailable (%v)", err)
 	}
 	defer m.Close()
 	s := &Server{m: m}
@@ -191,7 +191,7 @@ func TestCompanyScopeHTTPErrorClassificationAndBounds(t *testing.T) {
 func TestListAssetsClassifiesValidationAndDatabaseErrors(t *testing.T) {
 	m, err := NewManager(t.TempDir(), "")
 	if err != nil {
-		t.Skipf("postgres unavailable (%v)", err)
+		t.Fatalf("SQLite unavailable (%v)", err)
 	}
 	defer m.Close()
 	s := &Server{m: m}
@@ -217,7 +217,7 @@ func TestListAssetsClassifiesValidationAndDatabaseErrors(t *testing.T) {
 func TestDeleteCompanyRejectsBadJSONAndReportsMissing(t *testing.T) {
 	m, err := NewManager(t.TempDir(), "")
 	if err != nil {
-		t.Skipf("postgres unavailable (%v)", err)
+		t.Fatalf("SQLite unavailable (%v)", err)
 	}
 	defer m.Close()
 	s := &Server{m: m}
@@ -256,7 +256,7 @@ func TestDeleteCompanyRejectsBadJSONAndReportsMissing(t *testing.T) {
 func TestCompanyScopeSystemFailureIsHTTP500(t *testing.T) {
 	m, err := NewManager(t.TempDir(), "")
 	if err != nil {
-		t.Skipf("postgres unavailable (%v)", err)
+		t.Fatalf("SQLite unavailable (%v)", err)
 	}
 	defer m.Close()
 	s := &Server{m: m}

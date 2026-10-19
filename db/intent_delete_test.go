@@ -41,7 +41,7 @@ func gone(t *testing.T, es *ExplorationStore, id int64) bool {
 func TestSoftDeleteIntent(t *testing.T) {
 	d, err := Open(testDSN(t))
 	if err != nil {
-		t.Skipf("postgres unavailable (%v) — skipping", err)
+		t.Fatalf("SQLite unavailable (%v)", err)
 	}
 	defer d.Close()
 	expID, err := d.CreateExploration("soft delete", "假删除")
@@ -88,7 +88,7 @@ func TestSoftDeleteIntent(t *testing.T) {
 func TestHardDeleteCascadesExclusiveDescendants(t *testing.T) {
 	d, err := Open(testDSN(t))
 	if err != nil {
-		t.Skipf("postgres unavailable (%v) — skipping", err)
+		t.Fatalf("SQLite unavailable (%v)", err)
 	}
 	defer d.Close()
 	expID, err := d.CreateExploration("hard cascade", "级联删除")
@@ -125,7 +125,7 @@ func TestHardDeleteCascadesExclusiveDescendants(t *testing.T) {
 func TestHardDeletePreservesSharedAndGoal(t *testing.T) {
 	d, err := Open(testDSN(t))
 	if err != nil {
-		t.Skipf("postgres unavailable (%v) — skipping", err)
+		t.Fatalf("SQLite unavailable (%v)", err)
 	}
 	defer d.Close()
 	expID, err := d.CreateExploration("hard preserve", "保留共享/目标")

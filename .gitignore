@@ -58,3 +58,7 @@ Thumbs.db
 /bench/
 /Dockerfile.bench
 /Dockerfile.bench.v2
+# SQLite business stores and migration work files
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm

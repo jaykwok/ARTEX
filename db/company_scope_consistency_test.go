@@ -37,9 +37,6 @@ func TestAssetUpsertWaitsForCompanyScopeMutation(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer mutation.Rollback() //nolint:errcheck
-	if err := lockCompanyScopeMutation(mutation); err != nil {
-		t.Fatal(err)
-	}
 	if _, err := mutation.Exec(`DELETE FROM company_scope WHERE company_id=$1 AND kind='domain' AND domain=$2`, oldCompany, domain); err != nil {
 		t.Fatal(err)
 	}
@@ -230,7 +227,7 @@ func TestCompanyScopeLimitsAndCheckedErrors(t *testing.T) {
 func TestCompanyScopeCheckedReturnsSystemErrorSeparately(t *testing.T) {
 	d, err := Open(testDSN(t))
 	if err != nil {
-		t.Skipf("postgres unavailable (%v)", err)
+		t.Fatalf("SQLite unavailable (%v)", err)
 	}
 	companies := d.Companies()
 	if err := d.Close(); err != nil {

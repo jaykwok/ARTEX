@@ -213,7 +213,7 @@ type DeleteTaskResult struct {
 	CleanupWarning    string `json:"cleanup_warning,omitempty"`
 }
 
-// Manager owns the PostgreSQL data source (asset graph + every task's exploration
+// Manager owns the SQLite data source (asset graph + every task's exploration
 // graph + config) and the in-memory set of task handles.
 type Manager struct {
 	dir         string
@@ -224,7 +224,7 @@ type Manager struct {
 	interceptor *intercept.Interceptor // user-configured tool-call interception rules
 
 	companyMu sync.Mutex // serializes task/company-scope commits with live handle registration
-	// taskStateMu preserves commit order between PostgreSQL lifecycle writes and
+	// taskStateMu preserves commit order between SQLite lifecycle writes and
 	// their in-memory mirrors. lifecycleMu makes snapshots race-free, but without
 	// this outer write lock an older request could commit first and publish last.
 	taskStateMu sync.Mutex
@@ -339,8 +339,8 @@ func (m *Manager) SetWorkers(n int) error {
 // Enrich returns the asset auto-completion engine (may be nil if init failed).
 func (m *Manager) Enrich() *enrich.Engine { return m.enrich }
 
-// NewManager connects to PostgreSQL and, if proxyAddr is non-empty, starts the
-// traffic-recording proxy. PostgreSQL is required (it is the single data source).
+// NewManager opens SQLite and, if proxyAddr is non-empty, starts the
+// traffic-recording proxy. SQLite is the single business data source.
 func NewManager(dir, proxyAddr string) (*Manager, error) {
 	// Resolve the data dir to an ABSOLUTE path up front. Every data path derives
 	// from it — notably the MITM CA cert, whose path is injected into worker shells
@@ -358,7 +358,10 @@ func NewManager(dir, proxyAddr string) (*Manager, error) {
 	if err != nil {
 		return nil, err
 	}
-	log.Printf("[pg] 数据库配置来源: %s", source)
+	if source == "默认 SQLite 文件" {
+		dsn = filepath.Join(dir, "artex.sqlite")
+	}
+	log.Printf("[sqlite] 数据库配置来源: %s", source)
 	pg, err := pgdb.Open(dsn)
 	if err != nil {
 		return nil, err
@@ -1112,7 +1115,7 @@ func (m *Manager) LoadExisting() []*Task {
 		}
 	}
 	if len(loaded) > 0 {
-		log.Printf("[manager] reloaded %d task(s) from PG", len(loaded))
+		log.Printf("[manager] reloaded %d task(s) from SQLite", len(loaded))
 	}
 	return loaded
 }
@@ -1437,7 +1440,7 @@ func (m *Manager) SetTaskStatus(id, status string) error {
 // DeleteTask removes a task and optionally its related global data. Traffic has
 // no task-id column, so related exchanges are resolved by exact hosts from the
 // task's asset rows. Files are staged before the database operation; traffic is
-// staged while PostgreSQL excludes asset/anchor writers. Both are restored on a
+// staged while SQLite excludes asset/anchor writers. Both are restored on a
 // database failure and purged only after its commit.
 func (m *Manager) DeleteTask(id string, opts DeleteTaskOptions) (DeleteTaskResult, error) {
 	result := DeleteTaskResult{Deleted: id}
@@ -1490,7 +1493,7 @@ func (m *Manager) DeleteTask(id string, opts DeleteTaskOptions) (DeleteTaskResul
 	result.FindingsDeleted = dbResult.FindingsDeleted
 	result.LLMRecordsDeleted = dbResult.LLMRecordsDeleted
 
-	// PostgreSQL is now authoritative: finalize the staged external deletion and
+	// SQLite is now authoritative: finalize the staged external deletion and
 	// forget the live task even if a final purge reports an error. Such errors are
 	// typed so the HTTP layer can still tear down the task runtime instead of
 	// incorrectly reviving a task whose database row is already gone.
@@ -1512,7 +1515,7 @@ func (m *Manager) DeleteTask(id string, opts DeleteTaskOptions) (DeleteTaskResul
 	return result, nil
 }
 
-// taskDeleteCommittedError means PostgreSQL deletion succeeded but purging one
+// taskDeleteCommittedError means SQLite deletion succeeded but purging one
 // of the recoverable staging directories failed. The task must stay deleted.
 type taskDeleteCommittedError struct{ err error }
 
@@ -1525,7 +1528,7 @@ func (e *taskDeleteCommittedError) Unwrap() error { return e.err }
 func rollbackTaskDelete(cause error, trafficStage *traffic.HostDeleteStage, fileStage *taskFileDeleteStage) error {
 	errs := []error{cause}
 	// Reverse the preparation order. Both restorations are attempted even if the
-	// first one fails, and errors.Join preserves the original PostgreSQL error.
+	// first one fails, and errors.Join preserves the original SQLite error.
 	if trafficStage != nil {
 		if err := trafficStage.Rollback(); err != nil {
 			errs = append(errs, fmt.Errorf("restore traffic after task delete failure: %w", err))

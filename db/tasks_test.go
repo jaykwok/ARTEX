@@ -11,7 +11,7 @@ import (
 func TestTaskLifecycleAndDeleteCascade(t *testing.T) {
 	d, err := Open(testDSN(t))
 	if err != nil {
-		t.Skipf("postgres unavailable (%v) — skipping", err)
+		t.Fatalf("SQLite unavailable (%v)", err)
 	}
 	defer d.Close()
 
@@ -85,7 +85,7 @@ func TestTaskLifecycleAndDeleteCascade(t *testing.T) {
 func TestTaskDeleteCascadeAssets(t *testing.T) {
 	d, err := Open(testDSN(t))
 	if err != nil {
-		t.Skipf("postgres unavailable (%v) — skipping", err)
+		t.Fatalf("SQLite unavailable (%v)", err)
 	}
 	defer d.Close()
 
@@ -209,7 +209,7 @@ func TestTaskDeleteCascadeAssets(t *testing.T) {
 func TestTaskRelationsAndLLMFailoverChain(t *testing.T) {
 	d, err := Open(testDSN(t))
 	if err != nil {
-		t.Skipf("postgres unavailable (%v) - skipping", err)
+		t.Fatalf("SQLite unavailable (%v)", err)
 	}
 	defer d.Close()
 
@@ -467,7 +467,7 @@ func TestTaskRelationsAndLLMFailoverChain(t *testing.T) {
 func TestTaskContextRejectsDuplicatesAndAllowsTerminalLLMEdits(t *testing.T) {
 	d, err := Open(testDSN(t))
 	if err != nil {
-		t.Skipf("postgres unavailable (%v) - skipping", err)
+		t.Fatalf("SQLite unavailable (%v)", err)
 	}
 	defer d.Close()
 
@@ -520,7 +520,7 @@ func TestTaskContextRejectsDuplicatesAndAllowsTerminalLLMEdits(t *testing.T) {
 func TestCreateTaskWithCompanyScopes(t *testing.T) {
 	d, err := Open(testDSN(t))
 	if err != nil {
-		t.Skipf("postgres unavailable (%v) - skipping", err)
+		t.Fatalf("SQLite unavailable (%v)", err)
 	}
 	defer d.Close()
 
@@ -551,7 +551,7 @@ func TestCreateTaskWithCompanyScopes(t *testing.T) {
 	domainB := fmt.Sprintf("task-company-b-%d.example.test", suffix)
 	if err := d.QueryRow(`
 INSERT INTO assets(type, domain, root_domain, company_id, company_source, task_ids)
-VALUES ('root_domain',$1,$1,$2,'explicit',ARRAY[$3]::bigint[])
+VALUES ('root_domain',$1,$1,$2,'explicit',json_array($3))
 RETURNING id`, domainA, companyA, existingTask.ID).Scan(&companyAssetA); err != nil {
 		t.Fatal(err)
 	}
@@ -612,7 +612,7 @@ RETURNING id`, domainB, companyB).Scan(&companyAssetB); err != nil {
 		}
 	}
 	var existingAssociation bool
-	if err := d.QueryRow(`SELECT $1=ANY(task_ids) FROM assets WHERE id=$2`, existingTask.ID, companyAssetA).Scan(&existingAssociation); err != nil {
+	if err := d.QueryRow(`SELECT $1 IN (SELECT value FROM json_each(task_ids)) FROM assets WHERE id=$2`, existingTask.ID, companyAssetA).Scan(&existingAssociation); err != nil {
 		t.Fatal(err)
 	}
 	if !existingAssociation {
@@ -671,7 +671,7 @@ RETURNING id`, domainB, companyB).Scan(&companyAssetB); err != nil {
 func TestListTasksOrderByIDDesc(t *testing.T) {
 	d, err := Open(testDSN(t))
 	if err != nil {
-		t.Skipf("postgres unavailable (%v) — skipping", err)
+		t.Fatalf("SQLite unavailable (%v)", err)
 	}
 	defer d.Close()
 

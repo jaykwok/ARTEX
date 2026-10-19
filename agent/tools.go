@@ -524,6 +524,30 @@ func (t *ToolSet) graphOverviewData() map[string]any {
 	if t.as != nil && t.ts != nil && t.taskID > 0 {
 		{
 			m := map[string]any{}
+			if scopes, err := t.as.ListTaskScopeWithSources(t.taskID); err == nil {
+				items := make([]map[string]any, 0, len(scopes))
+				for _, scope := range scopes {
+					item := map[string]any{"kind": scope.Kind, "task_id": scope.TaskID, "source": scope.Source, "reason": scope.Reason, "domain": scope.Domain, "net": scope.Net, "value": scope.Value}
+					if scope.CompanyID != nil && t.cs != nil {
+						item["company_id"] = *scope.CompanyID
+						item["company_name"] = scope.CompanyName
+						if rules, err := t.cs.GetScope(*scope.CompanyID); err == nil {
+							companyScope := make([]map[string]any, 0, len(rules))
+							keywords := []string{}
+							for _, rule := range rules {
+								companyScope = append(companyScope, map[string]any{"kind": rule.Kind, "value": rule.Raw, "reason": rule.Reason})
+								if rule.Kind == "keyword" {
+									keywords = append(keywords, rule.Raw)
+								}
+							}
+							item["company_scope"] = companyScope
+							item["company_keywords"] = keywords
+						}
+					}
+					items = append(items, item)
+				}
+				m["scope"] = items
+			}
 			if !t.coverageDisabled {
 				if cov, err := t.as.TaskCoverageWithSources(t.taskID); err == nil {
 					m["denominator"] = cov.Denominator

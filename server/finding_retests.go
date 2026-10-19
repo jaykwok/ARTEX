@@ -206,9 +206,6 @@ func (s *Server) seedFindingRetester() error {
 	}
 	defer tx.Rollback()
 	// Lock this migration, including concurrent server initialization.
-	if _, err = tx.Exec(`SELECT pg_advisory_xact_lock(7337741010)`); err != nil {
-		return err
-	}
 	var done string
 	err = tx.QueryRow(`SELECT value FROM settings WHERE key=$1`, flag).Scan(&done)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
@@ -230,7 +227,7 @@ func (s *Server) seedFindingRetester() error {
 		VALUES ($1,1,$2,'内置默认','system') RETURNING id`, id, agent.RetesterDefaultPrompt).Scan(&pid); err != nil {
 			return err
 		}
-		if _, err = tx.Exec(`UPDATE agents SET current_prompt_id=$1 WHERE id=$2`, pid, id); err != nil {
+		if _, err = tx.Exec(`UPDATE agents SET updated_at=now(), current_prompt_id=$1 WHERE id=$2`, pid, id); err != nil {
 			return err
 		}
 	}

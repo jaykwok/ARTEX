@@ -47,7 +47,7 @@ ON CONFLICT (key) DO NOTHING`, key, desc, schema, agents)
 // default toolset on existing DBs.
 func (d *DB) AddAgentToToolBinding(agentKey string, keys []string) error {
 	for _, k := range keys {
-		if _, err := d.Exec(`UPDATE tools SET agents = agents || to_jsonb($1::text) WHERE key=$2 AND NOT (agents ? $1)`, agentKey, k); err != nil {
+		if _, err := d.Exec(`UPDATE tools SET updated_at=now(), agents = json_array_append(agents, $1) WHERE key=$2 AND NOT ($1 IN (SELECT value FROM json_each(agents)))`, agentKey, k); err != nil {
 			return err
 		}
 	}
@@ -58,7 +58,7 @@ func (d *DB) AddAgentToToolBinding(agentKey string, keys []string) error {
 // JSONB array — called when a custom agent is deleted so no tool keeps a dangling
 // binding. Uses jsonb `-` (remove array element) guarded by `?` (membership).
 func (d *DB) RemoveAgentFromToolBindings(agentKey string) error {
-	_, err := d.Exec(`UPDATE tools SET agents = agents - $1 WHERE agents ? $1`, agentKey)
+	_, err := d.Exec(`UPDATE tools SET updated_at=now(), agents = json_array_remove(agents, $1) WHERE $1 IN (SELECT value FROM json_each(agents))`, agentKey)
 	return err
 }
 
@@ -66,7 +66,7 @@ func (d *DB) RemoveAgentFromToolBindings(agentKey string) error {
 // used by one-time migrations that change a tool's default binding on existing DBs
 // (SeedTool is first-insert-only, so a changed default never reaches a seeded row).
 func (d *DB) RemoveAgentFromTool(agentKey, toolKey string) error {
-	_, err := d.Exec(`UPDATE tools SET agents = agents - $1 WHERE key=$2 AND agents ? $1`, agentKey, toolKey)
+	_, err := d.Exec(`UPDATE tools SET updated_at=now(), agents = json_array_remove(agents, $1) WHERE key=$2 AND $1 IN (SELECT value FROM json_each(agents))`, agentKey, toolKey)
 	return err
 }
 
@@ -185,7 +185,7 @@ func (d *DB) UpdateCustomTool(t *Tool) error {
 		agents = json.RawMessage("[]")
 	}
 	_, err := d.Exec(`
-UPDATE tools SET description=$2, schema=$3, agents=$4, enabled=$5, kind=$6, exec=$7, deferred=$8
+UPDATE tools SET updated_at=now(), description=$2, schema=$3, agents=$4, enabled=$5, kind=$6, exec=$7, deferred=$8
 WHERE key=$1 AND system=false`,
 		t.Key, t.Description, schema, agents, t.Enabled, t.Kind, exec, t.Deferred)
 	return err
@@ -226,7 +226,7 @@ func (d *DB) UpdateTool(key, desc string, schema, agents json.RawMessage, enable
 		agents = json.RawMessage("[]")
 	}
 	_, err := d.Exec(`
-UPDATE tools SET description=$2, schema=$3, agents=$4, enabled=$5 WHERE key=$1`,
+UPDATE tools SET updated_at=now(), description=$2, schema=$3, agents=$4, enabled=$5 WHERE key=$1`,
 		key, desc, schema, agents, enabled)
 	return err
 }

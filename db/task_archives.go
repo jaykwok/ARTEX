@@ -48,7 +48,7 @@ var (
 	ErrTaskArchiveFormatMismatch = errors.New("task archive format is not supported")
 )
 
-// TaskArchive is the compact PostgreSQL record retained while a task is cold.
+// TaskArchive is the compact SQLite record retained while a task is cold.
 // Sensitive profile configuration and API keys are intentionally absent.
 type TaskArchive struct {
 	ID                      int64           `json:"id"`
@@ -163,7 +163,7 @@ const taskArchiveCols = `id, task_id, state, phase, progress, COALESCE(error,'')
 format_version, COALESCE(archive_path,''), COALESCE(sha256,''), original_size,
 compressed_size, COALESCE(task_name,''), COALESCE(task_description,''),
 COALESCE(task_goal,''), COALESCE(original_status,''), category_id_snapshot,
-COALESCE(category_name_snapshot,''), array_to_json(source_task_ids)::text,
+COALESCE(category_name_snapshot,''), source_task_ids,
 remaining_timeout_seconds, data_counts, aggregate_stats, archived_at,
 requested_at, created_at, updated_at`
 
@@ -192,7 +192,7 @@ func (d *DB) ListTaskArchives(search, state string, page, size int) (TaskArchive
 	}
 	search = strings.TrimSpace(search)
 	state = strings.TrimSpace(state)
-	where := `WHERE ($1='' OR task_id::text ILIKE '%'||$1||'%' OR task_name ILIKE '%'||$1||'%' OR task_description ILIKE '%'||$1||'%')
+	where := `WHERE ($1='' OR CAST(task_id AS TEXT) LIKE '%'||$1||'%' OR task_name LIKE '%'||$1||'%' OR task_description LIKE '%'||$1||'%')
 AND ($2='' OR state=$2)`
 	var out TaskArchivePage
 	out.Page, out.Size = page, size
@@ -230,7 +230,7 @@ func (d *DB) QueueTaskArchive(taskID int64) (*TaskArchive, error) {
 	err = tx.QueryRow(`SELECT COALESCE(t.name,''), t.description, t.goal, t.status,
  t.category_id, COALESCE(c.name,''), t.paused, t.queued, t.deadline_at
 FROM tasks t LEFT JOIN task_categories c ON c.id=t.category_id
-WHERE t.id=$1 AND t.deleted_at IS NULL FOR UPDATE OF t`, taskID).Scan(
+WHERE t.id=$1 AND t.deleted_at IS NULL `, taskID).Scan(
 		&name, &description, &goal, &status, &categoryID, &categoryName, &paused, &queued, &deadline,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -313,7 +313,7 @@ VALUES ($1,$2,'queued',0,'','[]',$3,$4,$5,$6,$7,$8,$9,$10,$11,now())
 
 func (d *DB) QueueTaskArchiveRestore(id int64) (*TaskArchive, error) {
 	item, err := scanTaskArchive(d.QueryRow(`UPDATE task_archives
-SET state=$2, phase='queued', progress=0, error='', requested_at=now()
+SET updated_at=now(), state=$2, phase='queued', progress=0, error='', requested_at=now()
 WHERE id=$1 AND state IN ('ready','restore_failed') RETURNING `+taskArchiveCols, id, RestoreQueued))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrTaskArchiveState
@@ -328,7 +328,7 @@ func (d *DB) QueueTaskArchiveDelete(id int64) (*TaskArchive, error) {
 	}
 	defer tx.Rollback() //nolint:errcheck
 	var taskID int64
-	if err := tx.QueryRow(`SELECT task_id FROM task_archives WHERE id=$1 AND state IN ('ready','delete_failed') FOR UPDATE`, id).Scan(&taskID); err != nil {
+	if err := tx.QueryRow(`SELECT task_id FROM task_archives WHERE id=$1 AND state IN ('ready','delete_failed') `, id).Scan(&taskID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrTaskArchiveState
 		}
@@ -336,7 +336,7 @@ func (d *DB) QueueTaskArchiveDelete(id int64) (*TaskArchive, error) {
 	}
 	var dependent int64
 	err = tx.QueryRow(`SELECT task_id FROM task_archives
-WHERE id<>$1 AND $2=ANY(source_task_ids) AND state NOT IN ('delete_queued','deleting') LIMIT 1`, id, taskID).Scan(&dependent)
+WHERE id<>$1 AND $2 IN (SELECT value FROM json_each(source_task_ids)) AND state NOT IN ('delete_queued','deleting') LIMIT 1`, id, taskID).Scan(&dependent)
 	if err == nil {
 		return nil, fmt.Errorf("%w: task %d", ErrTaskArchiveDeleteBlocked, dependent)
 	}
@@ -344,7 +344,7 @@ WHERE id<>$1 AND $2=ANY(source_task_ids) AND state NOT IN ('delete_queued','dele
 		return nil, err
 	}
 	item, err := scanTaskArchive(tx.QueryRow(`UPDATE task_archives
-SET state=$2, phase='queued', progress=0, error='', requested_at=now()
+SET updated_at=now(), state=$2, phase='queued', progress=0, error='', requested_at=now()
 WHERE id=$1 RETURNING `+taskArchiveCols, id, DeleteQueued))
 	if err != nil {
 		return nil, err
@@ -356,8 +356,7 @@ WHERE id=$1 RETURNING `+taskArchiveCols, id, DeleteQueued))
 // An interrupted archive requires an explicit retry: automatic startup retries can
 // otherwise form a crash loop when the prior process was killed by resource limits.
 func (d *DB) RecoverTaskArchiveJobs() error {
-	_, err := d.Exec(`UPDATE task_archives SET
-	 state=CASE state WHEN 'archiving' THEN 'archive_failed'
+	_, err := d.Exec(`UPDATE task_archives SET updated_at=now(), state=CASE state WHEN 'archiving' THEN 'archive_failed'
 	                  WHEN 'restoring' THEN 'restore_queued'
 	                  WHEN 'deleting' THEN 'delete_queued' ELSE state END,
 	 phase='interrupted',
@@ -378,7 +377,7 @@ func (d *DB) ClaimTaskArchiveJob(ctx context.Context) (*TaskArchive, error) {
 	var queuedState string
 	err = tx.QueryRowContext(ctx, `SELECT id,state FROM task_archives
 WHERE state IN ('archive_queued','restore_queued','delete_queued')
-ORDER BY requested_at,id FOR UPDATE SKIP LOCKED LIMIT 1`).Scan(&id, &queuedState)
+ORDER BY requested_at,id  LIMIT 1`).Scan(&id, &queuedState)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -387,7 +386,7 @@ ORDER BY requested_at,id FOR UPDATE SKIP LOCKED LIMIT 1`).Scan(&id, &queuedState
 	}
 	active := map[string]string{ArchiveQueued: Archiving, RestoreQueued: Restoring, DeleteQueued: Deleting}[queuedState]
 	item, err := scanTaskArchive(tx.QueryRowContext(ctx, `UPDATE task_archives
-SET state=$2,phase='starting',progress=1,error='' WHERE id=$1 RETURNING `+taskArchiveCols, id, active))
+SET updated_at=now(),state=$2,phase='starting',progress=1,error='' WHERE id=$1 RETURNING `+taskArchiveCols, id, active))
 	if err != nil {
 		return nil, err
 	}
@@ -401,7 +400,7 @@ func (d *DB) UpdateTaskArchiveProgress(id int64, phase string, progress int) err
 	if progress > 100 {
 		progress = 100
 	}
-	_, err := d.Exec(`UPDATE task_archives SET phase=$2,progress=$3 WHERE id=$1`, id, phase, progress)
+	_, err := d.Exec(`UPDATE task_archives SET updated_at=now(), phase=$2,progress=$3 WHERE id=$1`, id, phase, progress)
 	return err
 }
 
@@ -409,7 +408,7 @@ func (d *DB) AppendTaskArchiveWarning(id int64, warning string) error {
 	if strings.TrimSpace(warning) == "" {
 		return nil
 	}
-	_, err := d.Exec(`UPDATE task_archives SET warnings=warnings || jsonb_build_array($2::text) WHERE id=$1`, id, warning)
+	_, err := d.Exec(`UPDATE task_archives SET updated_at=now(), warnings=json_array_append(warnings, $2) WHERE id=$1`, id, warning)
 	return err
 }
 
@@ -432,23 +431,14 @@ func (d *DB) FailTaskArchiveJob(id int64, activeState string, cause error) error
 	if cause != nil {
 		message = cause.Error()
 	}
-	_, err := d.Exec(`UPDATE task_archives SET state=$2,phase='failed',error=$3 WHERE id=$1`, id, failed, message)
+	_, err := d.Exec(`UPDATE task_archives SET updated_at=now(), state=$2,phase='failed',error=$3 WHERE id=$1`, id, failed, message)
 	return err
 }
 
 func queryArchiveRows(q interface {
-	Query(query string, args ...any) (*sql.Rows, error)
+	Query(string, ...any) (*sql.Rows, error)
 }, inner string, args ...any) (json.RawMessage, int64, error) {
-	// Do not aggregate the result in PostgreSQL. A jsonb array has a hard limit
-	// of 256 MiB for its elements, which large LLM request/response histories can
-	// exceed even though every individual record is valid. Reading row JSON in
-	// order also avoids building a second copy of the full table in PostgreSQL.
-	rows, err := q.Query(`SELECT row_to_json(row_data)::text FROM (`+inner+`) row_data`, args...)
-	if err != nil {
-		return nil, 0, err
-	}
-	defer rows.Close()
-	return encodeArchiveRows(rows)
+	return queryJSONRows(q, inner, args...)
 }
 
 func encodeArchiveRows(rows interface {
@@ -507,14 +497,9 @@ func writeArchiveRows(rows interface {
 }
 
 func streamArchiveRows(q interface {
-	Query(query string, args ...any) (*sql.Rows, error)
-}, writer io.Writer, inner string, args ...any) (int64, error) {
-	rows, err := q.Query(`SELECT row_to_json(row_data)::text FROM (`+inner+`) row_data`, args...)
-	if err != nil {
-		return 0, err
-	}
-	defer rows.Close()
-	return writeArchiveRows(rows, writer)
+	Query(string, ...any) (*sql.Rows, error)
+}, w io.Writer, inner string, args ...any) (int64, error) {
+	return streamJSONRows(q, w, inner, args...)
 }
 
 func rawRowCount(raw json.RawMessage) int64 {
@@ -526,17 +511,17 @@ func rawRowCount(raw json.RawMessage) int64 {
 }
 
 func archiveAssetIDsQuery() string {
-	return `SELECT id FROM assets WHERE $1=ANY(task_ids)
+	return `SELECT id FROM assets WHERE $1 IN (SELECT value FROM json_each(task_ids))
 UNION SELECT link.asset_id FROM task_asset_links link WHERE link.task_id=$1
 UNION SELECT anchor.asset_id FROM exploration_anchors anchor
       JOIN exploration_nodes node ON node.id=anchor.node_id WHERE node.exploration_id=$2
-UNION SELECT value::bigint FROM findings finding
-      CROSS JOIN LATERAL jsonb_array_elements_text(
-        CASE WHEN jsonb_typeof(finding.asset_ids)='array' THEN finding.asset_ids ELSE '[]'::jsonb END
-      ) value WHERE finding.task_id=$1 AND value ~ '^[0-9]+$'`
+UNION SELECT CAST(item.value AS INTEGER) FROM findings finding
+      CROSS JOIN json_each(
+        CASE WHEN json_type(finding.asset_ids)='array' THEN finding.asset_ids ELSE '[]' END
+      ) item WHERE finding.task_id=$1 AND CAST(item.value AS TEXT) <> '' AND CAST(item.value AS TEXT) NOT GLOB '*[^0-9]*'`
 }
 
-// SnapshotTaskArchive reads one repeatable PostgreSQL snapshot. Task-owned Agent
+// SnapshotTaskArchive reads one repeatable SQLite snapshot. Task-owned Agent
 // writes are already quiescent at the server barrier; repeatable-read also keeps
 // the asset and accounting views mutually consistent during serialization.
 func (d *DB) SnapshotTaskArchive(taskID int64) (*TaskArchiveSnapshot, error) {
@@ -545,7 +530,7 @@ func (d *DB) SnapshotTaskArchive(taskID int64) (*TaskArchiveSnapshot, error) {
 
 // SnapshotTaskArchiveWithLLMRecords streams the heavyweight record history to
 // llmRecords while all other task-owned data is read from the same repeatable
-// PostgreSQL snapshot.
+// SQLite snapshot.
 func (d *DB) SnapshotTaskArchiveWithLLMRecords(taskID int64, llmRecords io.Writer) (*TaskArchiveSnapshot, error) {
 	if llmRecords == nil {
 		return nil, errors.New("nil LLM record archive writer")
@@ -554,14 +539,11 @@ func (d *DB) SnapshotTaskArchiveWithLLMRecords(taskID int64, llmRecords io.Write
 }
 
 func (d *DB) snapshotTaskArchive(taskID int64, llmRecords io.Writer) (*TaskArchiveSnapshot, error) {
-	tx, err := d.BeginTx(context.Background(), &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
+	tx, err := d.BeginTx(context.Background(), &sql.TxOptions{ReadOnly: true})
 	if err != nil {
 		return nil, err
 	}
 	defer tx.Rollback() //nolint:errcheck
-	if err := coordinateWithSchemaMigration(tx); err != nil {
-		return nil, err
-	}
 	var expID int64
 	if err := tx.QueryRow(`SELECT exploration_id FROM tasks WHERE id=$1 AND deleted_at IS NULL`, taskID).Scan(&expID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -682,7 +664,7 @@ func archiveAssetMetadata(tx *sql.Tx, taskID, expID int64, assetRows json.RawMes
 	rowsID, err := tx.Query(`WITH candidate AS (`+archiveAssetIDsQuery()+`)
 SELECT asset.id FROM assets asset JOIN candidate ON candidate.id=asset.id
 WHERE asset.company_id IS NULL
-AND NOT EXISTS (SELECT 1 FROM tasks task WHERE task.id<>$1 AND task.deleted_at IS NULL AND task.id=ANY(asset.task_ids))
+AND NOT EXISTS (SELECT 1 FROM tasks task WHERE task.id<>$1 AND task.deleted_at IS NULL AND task.id IN (SELECT value FROM json_each(asset.task_ids)))
 AND NOT EXISTS (
  SELECT 1 FROM exploration_anchors anchor JOIN exploration_nodes node ON node.id=anchor.node_id
  JOIN tasks task ON task.exploration_id=node.exploration_id
@@ -726,40 +708,67 @@ FROM llm_usage WHERE COALESCE(task_id,'')=$1 OR exploration_id=$2`, strconv.Form
 		query string
 		args  []any
 	}{
-		{"token_profiles", `SELECT COALESCE(jsonb_agg(to_jsonb(x)),'[]'::jsonb) FROM (
+		{"token_profiles", `SELECT archive_json_rows FROM (
 SELECT COALESCE(profile_name,'') profile_name,count(*) calls,1 tasks,
        COALESCE(sum(input_tokens),0) input_tokens,COALESCE(sum(output_tokens),0) output_tokens,
        COALESCE(sum(cache_read),0) cache_read_tokens,COALESCE(sum(cache_write),0) cache_write_tokens
 FROM llm_usage WHERE COALESCE(task_id,'')=$1 OR exploration_id=$2
 GROUP BY profile_name ORDER BY sum(input_tokens)+sum(output_tokens) DESC) x`, []any{strconv.FormatInt(taskID, 10), expID}},
-		{"token_daily", `SELECT COALESCE(jsonb_agg(to_jsonb(x)),'[]'::jsonb) FROM (
-SELECT COALESCE(profile_name,'') profile_name,to_char(ts AT TIME ZONE 'UTC','YYYY-MM-DD') date,
+		{"token_daily", `SELECT archive_json_rows FROM (
+SELECT COALESCE(profile_name,'') profile_name,date(ts) date,
        COALESCE(sum(input_tokens),0) input_tokens,COALESCE(sum(output_tokens),0) output_tokens,
        COALESCE(sum(cache_read),0) cache_read_tokens
 FROM llm_usage WHERE COALESCE(task_id,'')=$1 OR exploration_id=$2
 GROUP BY profile_name,date ORDER BY date) x`, []any{strconv.FormatInt(taskID, 10), expID}},
-		{"skills", `SELECT COALESCE(jsonb_object_agg(name,n),'{}'::jsonb) FROM (SELECT skill name,count(*) n FROM skill_usage WHERE (task_id=$1 OR exploration_id=$2) AND found GROUP BY skill) x`, []any{taskID, expID}},
-		{"skill_stats", `SELECT COALESCE(jsonb_agg(to_jsonb(x)),'[]'::jsonb) FROM (
+		{"skills", `SELECT COALESCE(json_group_object(name,n),'{}') FROM (SELECT skill name,count(*) n FROM skill_usage WHERE (task_id=$1 OR exploration_id=$2) AND found GROUP BY skill) x`, []any{taskID, expID}},
+		{"skill_stats", `SELECT archive_json_rows FROM (
 SELECT skill,count(*) calls,1 tasks,
-       COALESCE(array_agg(DISTINCT agent_key) FILTER (WHERE agent_key IS NOT NULL),ARRAY[]::text[]) agents,
+       json_group_array(DISTINCT agent_key) FILTER (WHERE agent_key IS NOT NULL) agents,
        max(ts) last_used
 FROM skill_usage WHERE (task_id=$1 OR exploration_id=$2) AND found GROUP BY skill) x`, []any{taskID, expID}},
-		{"missing_skill_stats", `SELECT COALESCE(jsonb_agg(to_jsonb(x)),'[]'::jsonb) FROM (
+		{"missing_skill_stats", `SELECT archive_json_rows FROM (
 SELECT skill,count(*) calls,0 tasks,
-       COALESCE(array_agg(DISTINCT agent_key) FILTER (WHERE agent_key IS NOT NULL),ARRAY[]::text[]) agents,
+       json_group_array(DISTINCT agent_key) FILTER (WHERE agent_key IS NOT NULL) agents,
        max(ts) last_used
 FROM skill_usage WHERE (task_id=$1 OR exploration_id=$2) AND NOT found GROUP BY skill) x`, []any{taskID, expID}},
-		{"tools", `SELECT COALESCE(jsonb_object_agg(name,n),'{}'::jsonb) FROM (SELECT tool_key name,count(*) n FROM tool_usage WHERE task_id=$1 OR exploration_id=$2 GROUP BY tool_key) x`, []any{taskID, expID}},
-		{"findings", `SELECT COALESCE(jsonb_object_agg(name,n),'{}'::jsonb) FROM (SELECT COALESCE(NULLIF(severity,''),'unknown') name,count(*) n FROM findings WHERE task_id=$1 GROUP BY severity) x`, []any{taskID}},
-		{"finding_stats", `SELECT jsonb_build_object(
+		{"tools", `SELECT COALESCE(json_group_object(name,n),'{}') FROM (SELECT tool_key name,count(*) n FROM tool_usage WHERE task_id=$1 OR exploration_id=$2 GROUP BY tool_key) x`, []any{taskID, expID}},
+		{"findings", `SELECT COALESCE(json_group_object(name,n),'{}') FROM (SELECT COALESCE(NULLIF(severity,''),'unknown') name,count(*) n FROM findings WHERE task_id=$1 GROUP BY severity) x`, []any{taskID}},
+		{"finding_stats", `SELECT json_object(
  'total',count(*),'pending',count(*) FILTER (WHERE status='pending'),
  'critical',count(*) FILTER (WHERE severity='critical'),'high',count(*) FILTER (WHERE severity='high'),
  'medium',count(*) FILTER (WHERE severity='medium'),'low',count(*) FILTER (WHERE severity='low'),
- 'vulnclasses',COALESCE(jsonb_agg(DISTINCT vulnclass) FILTER (WHERE vulnclass<>''),'[]'::jsonb))
+ 'vulnclasses',COALESCE(json_group_array(DISTINCT vulnclass) FILTER (WHERE vulnclass<>''),'[]'))
 FROM findings WHERE task_id=$1`, []any{taskID}},
 	} {
 		var raw []byte
-		if err := tx.QueryRow(item.query, item.args...).Scan(&raw); err != nil {
+		if strings.HasPrefix(item.query, "SELECT archive_json_rows FROM (") {
+			inner := strings.TrimSuffix(strings.TrimPrefix(item.query, "SELECT archive_json_rows FROM ("), ") x")
+			var err error
+			raw, _, err = queryJSONRows(tx, inner, item.args...)
+			if err != nil {
+				return nil, err
+			}
+			// Aggregate JSON expressions have no declared type. Restore array values.
+			if item.name == "skill_stats" || item.name == "missing_skill_stats" {
+				var rows []map[string]any
+				if err = json.Unmarshal(raw, &rows); err != nil {
+					return nil, err
+				}
+				for _, r := range rows {
+					if text, ok := r["agents"].(string); ok {
+						var a any
+						if err = json.Unmarshal([]byte(text), &a); err != nil {
+							return nil, err
+						}
+						r["agents"] = a
+					}
+				}
+				raw, err = json.Marshal(rows)
+				if err != nil {
+					return nil, err
+				}
+			}
+		} else if err := tx.QueryRow(item.query, item.args...).Scan(&raw); err != nil {
 			return nil, err
 		}
 		var value any

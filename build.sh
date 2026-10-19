@@ -183,6 +183,7 @@ package_binary() {
   fi
   cp -R skills "$package_root/"
   cp config.example.json "$package_root/"
+  if [ "$goos" != windows ]; then cp reset-password.sh "$package_root/"; fi
   if [ -f README.md ]; then cp README.md "$package_root/"; fi
   (cd "$ARTEX_PACKAGE_DIR" && zip -q -r -9 "$(basename "$archive")" "$(basename "$package_root")")
   rm -rf "$package_root"
@@ -222,6 +223,7 @@ build_target() {
     -ldflags "-s -w -buildid= -X main.version=${ARTEX_BUILD_VERSION}" \
     -o "$output" \
     ./cmd/artex
+
 
   compress_binary "$output" "$goos"
   if command -v file >/dev/null 2>&1; then file "$output"; fi

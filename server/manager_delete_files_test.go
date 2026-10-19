@@ -15,7 +15,7 @@ import (
 func TestSeedAssociatesTargetAssetWithTask(t *testing.T) {
 	m, err := NewManager(t.TempDir(), "")
 	if err != nil {
-		t.Skipf("postgres unavailable (%v) - skipping", err)
+		t.Fatalf("SQLite unavailable (%v)", err)
 	}
 	defer m.Close()
 	task, err := m.CreateTask("seed ownership", "seed ownership", nil, 0, 0)
@@ -170,11 +170,11 @@ func TestStageTaskFilesRollbackReportsRestoreFailure(t *testing.T) {
 	}
 }
 
-func TestManagerDeleteTaskRestoresFilesAndTrafficWhenPostgresDeleteFails(t *testing.T) {
+func TestManagerDeleteTaskRestoresFilesAndTrafficWhenSQLiteDeleteFails(t *testing.T) {
 	dataDir := t.TempDir()
 	m, err := NewManager(dataDir, "")
 	if err != nil {
-		t.Skipf("postgres unavailable (%v) - skipping", err)
+		t.Fatalf("SQLite unavailable (%v)", err)
 	}
 	t.Cleanup(func() { _ = m.Close() })
 
@@ -184,10 +184,9 @@ func TestManagerDeleteTaskRestoresFilesAndTrafficWhenPostgresDeleteFails(t *test
 	}
 	taskID := mustTaskID(t, task.ID)
 	triggerName := fmt.Sprintf("test_fail_task_delete_%d", taskID)
-	functionName := triggerName + "_fn"
+
 	cleanupDB := func() {
-		_, _ = m.pg.Exec(fmt.Sprintf(`DROP TRIGGER IF EXISTS %s ON tasks`, triggerName))
-		_, _ = m.pg.Exec(fmt.Sprintf(`DROP FUNCTION IF EXISTS %s()`, functionName))
+		_, _ = m.pg.Exec(fmt.Sprintf(`DROP TRIGGER IF EXISTS %s`, triggerName))
 		_, _ = m.DeleteTask(task.ID, DeleteTaskOptions{DeleteAssets: true, DeleteTraffic: true, DeleteFiles: true})
 	}
 	t.Cleanup(cleanupDB)
@@ -218,12 +217,7 @@ VALUES(?,?,?,?,?,?,?,?,?,?,?)`, "1-0001", 1, host, "GET", "/", "https://"+host+"
 		t.Fatal(err)
 	}
 
-	if _, err := m.pg.Exec(fmt.Sprintf(`CREATE FUNCTION %s() RETURNS trigger LANGUAGE plpgsql AS $body$
-BEGIN RAISE EXCEPTION 'forced task delete failure'; END $body$`, functionName)); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := m.pg.Exec(fmt.Sprintf(`CREATE TRIGGER %s BEFORE DELETE ON tasks
-FOR EACH ROW WHEN (OLD.id = %d) EXECUTE FUNCTION %s()`, triggerName, taskID, functionName)); err != nil {
+	if _, err := m.pg.Exec(fmt.Sprintf(`CREATE TRIGGER %s BEFORE DELETE ON tasks FOR EACH ROW WHEN OLD.id=%d BEGIN SELECT RAISE(ABORT,'forced task delete failure'); END`, triggerName, taskID)); err != nil {
 		t.Fatal(err)
 	}
 

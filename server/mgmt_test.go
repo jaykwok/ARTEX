@@ -9,14 +9,14 @@ import (
 	"testing"
 )
 
-// TestMgmtAPI exercises the PostgreSQL-backed management API through the real mux.
+// TestMgmtAPI exercises the SQLite-backed management API through the real mux.
 func TestMgmtAPI(t *testing.T) {
 	m, err := NewManager(t.TempDir(), "")
 	if err != nil {
-		t.Skipf("database unavailable (%v) — skipping management API test", err)
+		t.Fatalf("SQLite unavailable: %v", err)
 	}
 	if m.pg == nil {
-		t.Skip("postgres unavailable — skipping management API test")
+		t.Fatal("SQLite test database unavailable")
 	}
 	td := t.TempDir()
 	s := New(context.Background(), m, td, td, td)

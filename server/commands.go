@@ -1,6 +1,7 @@
 package server
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -139,6 +140,10 @@ func (s *Server) pgDeleteLLMRecords(w http.ResponseWriter, r *http.Request) {
 	}
 	n, err := s.m.PG().DeleteLLMRecords(task)
 	if err != nil {
+		if errors.Is(err, db.ErrTaskArchiveState) {
+			writeErr(w, http.StatusConflict, err.Error())
+			return
+		}
 		writeErr(w, 500, err.Error())
 		return
 	}

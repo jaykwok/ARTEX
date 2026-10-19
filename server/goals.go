@@ -74,7 +74,7 @@ func (s *Server) occupiesConcurrencySlot(t *Task) bool {
 		return false
 	}
 	// Deletion temporarily pauses the Engine but has not committed yet. Preserve
-	// the task's slot until PostgreSQL deletion succeeds; otherwise FIFO promotion
+	// the task's slot until SQLite deletion succeeds; otherwise FIFO promotion
 	// during the drain window could over-admit if deletion later aborts and the
 	// persisted running task is restored.
 	if s.engine.IsDeleting(t.ID) {

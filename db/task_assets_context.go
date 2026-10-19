@@ -30,7 +30,7 @@ target AS (
        (ts.kind='company'     AND a.company_id = ts.company_id)
     OR (ts.kind='root_domain' AND a.root_domain = ts.domain)
     OR (ts.kind='subdomain'   AND a.domain = ts.domain)
-    OR (ts.kind IN ('ip','cidr') AND ts.net >>= try_inet(a.ip))
+    OR (ts.kind IN ('ip','cidr') AND ip_contains(ts.net, try_ip(a.ip)))
     OR (ts.kind='icp' AND (
          lower(regexp_replace(COALESCE(a.icp,''), '[[:space:]]+', '', 'g')) = ts.value
          OR lower(regexp_replace(COALESCE(a.app_icp,''), '[[:space:]]+', '', 'g')) = ts.value
@@ -79,7 +79,7 @@ target AS (
        (ts.kind='company'     AND a.company_id = ts.company_id)
     OR (ts.kind='root_domain' AND a.root_domain = ts.domain)
     OR (ts.kind='subdomain'   AND a.domain = ts.domain)
-    OR (ts.kind IN ('ip','cidr') AND (ts.net >>= try_inet(a.ip) OR ts.net >>= try_inet(a.domain)))
+    OR (ts.kind IN ('ip','cidr') AND (ip_contains(ts.net, try_ip(a.ip)) OR ip_contains(ts.net, try_ip(a.domain))))
     OR (ts.kind='icp' AND (
          lower(regexp_replace(COALESCE(a.icp,''), '[[:space:]]+', '', 'g')) = ts.value
          OR lower(regexp_replace(COALESCE(a.app_icp,''), '[[:space:]]+', '', 'g')) = ts.value
@@ -93,7 +93,7 @@ target AS (
 func (s *AssetStore) ListTaskScopeWithSources(taskID int64) ([]TaskScope, error) {
 	rows, err := s.db.Query(`WITH `+directTaskContextCTE+`
 SELECT ts.id, ts.task_id, ts.kind, COALESCE(ts.company_id,0), COALESCE(c.name,''), COALESCE(ts.domain,''),
-       COALESCE(ts.net::text,''), COALESCE(ts.value,''), ts.source, COALESCE(ts.reason,'')
+       COALESCE(CAST(ts.net AS TEXT),''), COALESCE(ts.value,''), ts.source, COALESCE(ts.reason,'')
 FROM task_scope ts
 JOIN context_tasks ctx ON ctx.task_id=ts.task_id
 LEFT JOIN companies c ON c.id=ts.company_id
@@ -203,7 +203,7 @@ func (s *AssetStore) HostsByTaskWithSources(taskID int64) ([]string, error) {
 context_assets AS (
   SELECT DISTINCT a.id
   FROM assets a
-  WHERE EXISTS (SELECT 1 FROM context_tasks ctx WHERE ctx.task_id=ANY(a.task_ids))
+  WHERE EXISTS (SELECT 1 FROM context_tasks ctx WHERE ctx.task_id IN (SELECT value FROM json_each(a.task_ids)))
   UNION
   SELECT ea.asset_id
   FROM exploration_anchors ea
@@ -216,7 +216,7 @@ context_assets AS (
        (ts.kind='company'     AND a.company_id=ts.company_id)
     OR (ts.kind='root_domain' AND a.root_domain=ts.domain)
     OR (ts.kind='subdomain'   AND a.domain=ts.domain)
-    OR (ts.kind IN ('ip','cidr') AND ts.net >>= try_inet(a.ip))
+    OR (ts.kind IN ('ip','cidr') AND ip_contains(ts.net, try_ip(a.ip)))
     OR (ts.kind='icp' AND (
          lower(regexp_replace(COALESCE(a.icp,''), '[[:space:]]+', '', 'g')) = ts.value
          OR lower(regexp_replace(COALESCE(a.app_icp,''), '[[:space:]]+', '', 'g')) = ts.value

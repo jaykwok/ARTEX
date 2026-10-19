@@ -34,7 +34,7 @@ func (d *DB) GetInterceptExecution(id int64) (*InterceptExecution, error) {
 	var scope any
 	if approval.ConversationID != nil {
 		scope = *approval.ConversationID
-		query = `SELECT id, NULL::bigint, COALESCE(worker,''), kind, COALESCE(tool,''), tool_use_id, is_error, COALESCE(summary,''), created_at, NULL::integer FROM conversation_activities WHERE conversation_id=$1`
+		query = `SELECT id, NULL, COALESCE(worker,''), kind, COALESCE(tool,''), tool_use_id, is_error, COALESCE(summary,''), created_at, NULL FROM conversation_activities WHERE conversation_id=$1`
 	} else if approval.TaskID != nil {
 		taskID, parseErr := strconv.ParseInt(*approval.TaskID, 10, 64)
 		if parseErr != nil || taskID <= 0 {

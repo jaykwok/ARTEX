@@ -56,13 +56,12 @@ type SkillStat struct {
 // that were never invoked are absent — callers merge against the skill list on disk.
 // Only resolved calls count; misses are reported separately by MissingSkillStats.
 func (d *DB) SkillStats() ([]SkillStat, error) {
-	// agent keys come back as one comma-joined string rather than text[]: the pgx
-	// stdlib driver has no database/sql Scan target for arrays, and agent keys are
-	// [a-z0-9_-] so a comma join is unambiguous.
+	// Agent keys are limited to letters, digits, underscores and hyphens, so a
+	// comma-separated aggregate is unambiguous.
 	rows, err := d.Query(`
 SELECT skill, COUNT(*) AS calls,
        COUNT(DISTINCT task_id) AS tasks,
-       COALESCE(STRING_AGG(DISTINCT agent_key, ','), '') AS agents,
+       COALESCE(GROUP_CONCAT(DISTINCT agent_key), '') AS agents,
        MAX(ts) AS last_used
 FROM skill_usage
 WHERE found
@@ -109,7 +108,7 @@ func (d *DB) MissingSkillStats(limit int) ([]SkillStat, error) {
 	}
 	rows, err := d.Query(`
 SELECT skill, COUNT(*) AS calls,
-       COALESCE(STRING_AGG(DISTINCT agent_key, ','), '') AS agents,
+       COALESCE(GROUP_CONCAT(DISTINCT agent_key), '') AS agents,
        MAX(ts) AS last_used
 FROM skill_usage
 WHERE NOT found

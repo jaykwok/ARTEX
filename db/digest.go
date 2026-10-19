@@ -16,7 +16,7 @@ import (
 // new value (§2.3). Called once per planner wake-up.
 func (s *ExplorationStore) BumpRound() (int64, error) {
 	var r int64
-	err := s.db.QueryRow(`UPDATE explorations SET round_no = round_no + 1 WHERE id=$1 RETURNING round_no`, s.expID).Scan(&r)
+	err := s.db.QueryRow(`UPDATE explorations SET updated_at=now(), round_no = round_no + 1 WHERE id=$1 RETURNING round_no`, s.expID).Scan(&r)
 	return r, err
 }
 
@@ -73,11 +73,11 @@ func (s *ExplorationStore) ApplyStampOps(ops []StampOp) error {
 	defer tx.Rollback()
 	for _, o := range ops {
 		if o.Set {
-			if _, err := tx.Exec(`UPDATE exploration_nodes SET cold_since_round=$1 WHERE id=$2 AND exploration_id=$3`, o.Round, o.ID, s.expID); err != nil {
+			if _, err := tx.Exec(`UPDATE exploration_nodes SET updated_at=now(), cold_since_round=$1 WHERE id=$2 AND exploration_id=$3`, o.Round, o.ID, s.expID); err != nil {
 				return err
 			}
 		} else {
-			if _, err := tx.Exec(`UPDATE exploration_nodes SET cold_since_round=NULL WHERE id=$1 AND exploration_id=$2`, o.ID, s.expID); err != nil {
+			if _, err := tx.Exec(`UPDATE exploration_nodes SET updated_at=now(), cold_since_round=NULL WHERE id=$1 AND exploration_id=$2`, o.ID, s.expID); err != nil {
 				return err
 			}
 		}
@@ -212,7 +212,7 @@ func (s *ExplorationStore) SupersedeDigests(ids []int64) error {
 			WHERE exploration_id=$1 AND src_id=$2 AND rel=$3`, s.expID, id, RelCovers); err != nil {
 			return err
 		}
-		if _, err := tx.Exec(`UPDATE exploration_nodes SET state=$1 WHERE id=$2 AND exploration_id=$3 AND kind=$4`,
+		if _, err := tx.Exec(`UPDATE exploration_nodes SET updated_at=now(), state=$1 WHERE id=$2 AND exploration_id=$3 AND kind=$4`,
 			StateDigestSuperseded, id, s.expID, KindDigest); err != nil {
 			return err
 		}

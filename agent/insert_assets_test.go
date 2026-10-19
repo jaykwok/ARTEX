@@ -14,11 +14,11 @@ func testDB(t *testing.T) *db.DB {
 	t.Helper()
 	dsn, _, err := db.DSN()
 	if err != nil {
-		t.Skipf("no database config (%v)", err)
+		t.Fatalf("no database config (%v)", err)
 	}
 	d, err := db.Open(dsn)
 	if err != nil {
-		t.Skipf("postgres unavailable (%v)", err)
+		t.Fatalf("SQLite unavailable (%v)", err)
 	}
 	return d
 }
@@ -83,7 +83,7 @@ func TestInsertAssetsSubdomainSideEffects(t *testing.T) {
 	// IP asset should exist with bound_domains containing our subdomain
 	var ipID int64
 	var boundDomains []byte
-	d.QueryRow(`SELECT id, array_to_json(bound_domains)::text FROM assets WHERE type='ip' AND ip='7.8.9.10'`).Scan(&ipID, &boundDomains)
+	d.QueryRow(`SELECT id, bound_domains FROM assets WHERE type='ip' AND ip='7.8.9.10'`).Scan(&ipID, &boundDomains)
 	if ipID == 0 {
 		t.Error("side-effect: IP asset not created")
 	}
@@ -101,7 +101,7 @@ func TestInsertAssetsSubdomainSideEffects(t *testing.T) {
 
 	// record_value stored as array
 	var rvRaw []byte
-	d.QueryRow(`SELECT array_to_json(record_value)::text FROM assets WHERE type='subdomain' AND domain='ia-sub.sideeffect-test.com'`).Scan(&rvRaw)
+	d.QueryRow(`SELECT record_value FROM assets WHERE type='subdomain' AND domain='ia-sub.sideeffect-test.com'`).Scan(&rvRaw)
 	var rv []string
 	json.Unmarshal(rvRaw, &rv)
 	if len(rv) == 0 || rv[0] != "7.8.9.10" {
@@ -149,7 +149,7 @@ func TestInsertAssetsMultiIPSubdomain(t *testing.T) {
 
 	// record_value should contain both IPs
 	var rvRaw []byte
-	d.QueryRow(`SELECT array_to_json(record_value)::text FROM assets WHERE type='subdomain' AND domain='multi.multiip-test.io'`).Scan(&rvRaw)
+	d.QueryRow(`SELECT record_value FROM assets WHERE type='subdomain' AND domain='multi.multiip-test.io'`).Scan(&rvRaw)
 	var rv []string
 	json.Unmarshal(rvRaw, &rv)
 	if len(rv) != 2 {
@@ -189,7 +189,7 @@ func TestInsertAssetsHTTPServiceTechnologies(t *testing.T) {
 
 	// technologies should be stored
 	var techCnt int
-	d.QueryRow(`SELECT array_length(technologies,1) FROM assets WHERE url='https://tech-test.example.com'`).Scan(&techCnt)
+	d.QueryRow(`SELECT json_array_length(technologies) FROM assets WHERE url='https://tech-test.example.com'`).Scan(&techCnt)
 	if techCnt != 3 {
 		t.Errorf("technologies: want 3, got %d", techCnt)
 	}
@@ -217,7 +217,7 @@ func TestInsertAssetsHTTPServiceTechnologies(t *testing.T) {
 	var ipID int64
 	var bdRaw []byte
 	var portCnt int
-	d.QueryRow(`SELECT id, array_to_json(bound_domains)::text FROM assets WHERE type='ip' AND ip='3.4.5.6'`).Scan(&ipID, &bdRaw)
+	d.QueryRow(`SELECT id, bound_domains FROM assets WHERE type='ip' AND ip='3.4.5.6'`).Scan(&ipID, &bdRaw)
 	if ipID == 0 {
 		t.Error("side-effect: IP asset not created for HTTP service IP")
 	}
@@ -234,7 +234,7 @@ func TestInsertAssetsHTTPServiceTechnologies(t *testing.T) {
 	}
 
 	// side effect: IP open_ports should contain port 443
-	d.QueryRow(`SELECT cardinality(open_ports) FROM assets WHERE type='ip' AND ip='3.4.5.6'`).Scan(&portCnt)
+	d.QueryRow(`SELECT json_array_length(open_ports) FROM assets WHERE type='ip' AND ip='3.4.5.6'`).Scan(&portCnt)
 	if portCnt == 0 {
 		t.Error("side-effect: IP open_ports not set for HTTP service")
 	}
@@ -273,21 +273,21 @@ func TestInsertAssetsOtherService(t *testing.T) {
 
 	// c_segment should be auto-set on the service
 	var cseg *string
-	d.QueryRow(`SELECT c_segment::text FROM assets WHERE type='service' AND ip='10.20.30.40'`).Scan(&cseg)
+	d.QueryRow(`SELECT CAST(c_segment AS TEXT) FROM assets WHERE type='service' AND ip='10.20.30.40'`).Scan(&cseg)
 	if cseg == nil || *cseg != "10.20.30.0/24" {
 		t.Errorf("c_segment: want 10.20.30.0/24, got %v", cseg)
 	}
 
 	// IP side-effect: port 3306 in open_ports
 	var portCnt int
-	d.QueryRow(`SELECT cardinality(open_ports) FROM assets WHERE type='ip' AND ip='10.20.30.40'`).Scan(&portCnt)
+	d.QueryRow(`SELECT json_array_length(open_ports) FROM assets WHERE type='ip' AND ip='10.20.30.40'`).Scan(&portCnt)
 	if portCnt == 0 {
 		t.Error("side-effect: IP open_ports should contain port 3306")
 	}
 
 	// IP side-effect: bound_domains contains the service domain
 	var bdRaw []byte
-	d.QueryRow(`SELECT array_to_json(bound_domains)::text FROM assets WHERE type='ip' AND ip='10.20.30.40'`).Scan(&bdRaw)
+	d.QueryRow(`SELECT bound_domains FROM assets WHERE type='ip' AND ip='10.20.30.40'`).Scan(&bdRaw)
 	var bd []string
 	json.Unmarshal(bdRaw, &bd)
 	hasDomain := false

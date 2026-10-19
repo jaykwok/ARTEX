@@ -67,7 +67,7 @@ var reAgentKey = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
 // pgReady returns the PG handle, or writes 503 and returns nil if unavailable.
 func (s *Server) pg(w http.ResponseWriter) *db.DB {
 	if s.m.pg == nil {
-		writeErr(w, 503, "管理后台数据源(PostgreSQL)未连接")
+		writeErr(w, 503, "管理后台数据源(SQLite)未连接")
 		return nil
 	}
 	return s.m.pg
@@ -170,7 +170,7 @@ func (s *Server) pgDeleteTask(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		var committed *taskDeleteCommittedError
 		if errors.As(err, &committed) {
-			// PostgreSQL is already gone. Complete runtime teardown and return the
+			// SQLite is already gone. Complete runtime teardown and return the
 			// auditable counts together with the post-commit cleanup warning.
 			s.engine.StopTask(id)
 			s.taskAgentMu.Lock()

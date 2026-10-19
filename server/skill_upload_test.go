@@ -47,7 +47,7 @@ func TestSkillRelPath(t *testing.T) {
 	}
 	for in, want := range ok {
 		got, msg := skillRelPath(in)
-		if msg != "" || got != want {
+		if msg != "" || got != filepath.FromSlash(want) {
 			t.Errorf("skillRelPath(%q) = (%q, %q), want (%q, \"\")", in, got, msg, want)
 		}
 	}

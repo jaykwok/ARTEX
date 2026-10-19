@@ -20,9 +20,9 @@ import (
 
 func evidenceFixture(t *testing.T) (*Store, db.RecordFindingInput, string) {
 	t.Helper()
-	dsn := os.Getenv("ARTEX_PG_DSN")
-	if dsn == "" {
-		t.Skip("ARTEX_PG_DSN is required for evidence integration tests")
+	dsn, _, err := db.DSN()
+	if err != nil {
+		t.Fatal(err)
 	}
 	pg, err := db.Open(dsn)
 	if err != nil {

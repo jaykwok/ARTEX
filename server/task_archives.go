@@ -242,7 +242,7 @@ func (s *Server) restoreTaskArchive(job *pgdb.TaskArchive) (runErr error) {
 	if err := validateArchivePath(s.m.dir, job.ArchivePath); err != nil {
 		return err
 	}
-	// A prior attempt may have committed PostgreSQL and files, then failed only
+	// A prior attempt may have committed SQLite and files, then failed only
 	// while consuming the package. Finish that cleanup without replaying rows.
 	if restored, err := s.m.pg.IsTaskArchiveRestored(job.ID); err != nil {
 		return err

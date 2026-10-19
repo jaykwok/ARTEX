@@ -16,9 +16,9 @@ func TestJsonbClean(t *testing.T) {
 		t.Fatalf("precondition: marshaled JSON should contain the NUL escape, got %s", b)
 	}
 
-	cleaned := jsonbClean(b)
+	cleaned := cleanJSON(b)
 	if strings.Contains(string(cleaned), `\u0000`) {
-		t.Fatalf("jsonbClean left a NUL escape jsonb rejects: %s", cleaned)
+		t.Fatalf("cleanJSON left a NUL escape jsonb rejects: %s", cleaned)
 	}
 
 	// Result must stay valid JSON with the NUL simply dropped.
@@ -32,13 +32,13 @@ func TestJsonbClean(t *testing.T) {
 
 	// A NUL escape typed literally in source text (doubled backslash) is preserved.
 	lit := []byte(`{"body":"\\u0000"}`)
-	if got := jsonbClean(lit); string(got) != string(lit) {
+	if got := cleanJSON(lit); string(got) != string(lit) {
 		t.Fatalf("literal \\\\u0000 must be untouched, got %s", got)
 	}
 
 	// No NUL escape → returned unchanged.
 	plain := []byte(`{"body":"hello"}`)
-	if got := jsonbClean(plain); string(got) != string(plain) {
+	if got := cleanJSON(plain); string(got) != string(plain) {
 		t.Fatalf("plain JSON must be untouched, got %s", got)
 	}
 }

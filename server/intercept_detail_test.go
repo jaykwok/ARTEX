@@ -15,7 +15,7 @@ import (
 func TestInterceptDetailHTTP(t *testing.T) {
 	dsn, _, err := db.DSN()
 	if err != nil {
-		t.Skip("no test database configured")
+		t.Fatal("SQLite test database unavailable")
 	}
 	d, err := db.Open(dsn)
 	if err != nil {

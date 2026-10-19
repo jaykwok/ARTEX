@@ -17,7 +17,7 @@ func cleanupCompany(d *DB, id int64) {
 func TestCompanyUpsertAndGet(t *testing.T) {
 	d, err := Open(testDSN(t))
 	if err != nil {
-		t.Skipf("postgres unavailable (%v)", err)
+		t.Fatalf("SQLite unavailable (%v)", err)
 	}
 	defer d.Close()
 	cs := d.Companies()
@@ -64,7 +64,7 @@ func TestCompanyUpsertAndGet(t *testing.T) {
 func TestCreateCompanyWithScopeRejectsNormalizedDuplicate(t *testing.T) {
 	d, err := Open(testDSN(t))
 	if err != nil {
-		t.Skipf("postgres unavailable (%v)", err)
+		t.Fatalf("SQLite unavailable (%v)", err)
 	}
 	defer d.Close()
 	cs := d.Companies()
@@ -103,7 +103,7 @@ func TestCreateCompanyWithScopeRejectsNormalizedDuplicate(t *testing.T) {
 func TestCreateCompanyWithScopeRollsBackOnScopeWriteFailure(t *testing.T) {
 	d, err := Open(testDSN(t))
 	if err != nil {
-		t.Skipf("postgres unavailable (%v)", err)
+		t.Fatalf("SQLite unavailable (%v)", err)
 	}
 	defer d.Close()
 	cs := d.Companies()
@@ -128,7 +128,7 @@ func TestCreateCompanyWithScopeRollsBackOnScopeWriteFailure(t *testing.T) {
 func TestCompanyScope(t *testing.T) {
 	d, err := Open(testDSN(t))
 	if err != nil {
-		t.Skipf("postgres unavailable (%v)", err)
+		t.Fatalf("SQLite unavailable (%v)", err)
 	}
 	defer d.Close()
 	cs := d.Companies()
@@ -166,7 +166,7 @@ func TestCompanyScope(t *testing.T) {
 func TestCompanyScopeInvalid(t *testing.T) {
 	d, err := Open(testDSN(t))
 	if err != nil {
-		t.Skipf("postgres unavailable (%v)", err)
+		t.Fatalf("SQLite unavailable (%v)", err)
 	}
 	defer d.Close()
 	cs := d.Companies()
@@ -195,7 +195,7 @@ func TestCompanyScopeInvalid(t *testing.T) {
 func TestResolveCompany(t *testing.T) {
 	d, err := Open(testDSN(t))
 	if err != nil {
-		t.Skipf("postgres unavailable (%v)", err)
+		t.Fatalf("SQLite unavailable (%v)", err)
 	}
 	defer d.Close()
 	cs := d.Companies()
@@ -236,7 +236,7 @@ func TestResolveCompany(t *testing.T) {
 func TestUpdateScope(t *testing.T) {
 	d, err := Open(testDSN(t))
 	if err != nil {
-		t.Skipf("postgres unavailable (%v)", err)
+		t.Fatalf("SQLite unavailable (%v)", err)
 	}
 	defer d.Close()
 	cs := d.Companies()
@@ -281,7 +281,7 @@ func TestUpdateScope(t *testing.T) {
 func TestUpdateScopeRollsBackOnInsertFailure(t *testing.T) {
 	d, err := Open(testDSN(t))
 	if err != nil {
-		t.Skipf("postgres unavailable (%v)", err)
+		t.Fatalf("SQLite unavailable (%v)", err)
 	}
 	defer d.Close()
 	cs := d.Companies()
@@ -316,7 +316,7 @@ func TestUpdateScopeRollsBackOnInsertFailure(t *testing.T) {
 func TestDeleteCompany(t *testing.T) {
 	d, err := Open(testDSN(t))
 	if err != nil {
-		t.Skipf("postgres unavailable (%v)", err)
+		t.Fatalf("SQLite unavailable (%v)", err)
 	}
 	defer d.Close()
 	cs := d.Companies()
@@ -344,7 +344,7 @@ func TestDeleteCompany(t *testing.T) {
 func TestDeleteCompanyWithAssetsDeletesBoth(t *testing.T) {
 	d, err := Open(testDSN(t))
 	if err != nil {
-		t.Skipf("postgres unavailable (%v)", err)
+		t.Fatalf("SQLite unavailable (%v)", err)
 	}
 	defer d.Close()
 	cs := d.Companies()
@@ -391,7 +391,7 @@ RETURNING id`, domain, id).Scan(&assetID); err != nil {
 func TestRecomputeAttribution(t *testing.T) {
 	d, err := Open(testDSN(t))
 	if err != nil {
-		t.Skipf("postgres unavailable (%v)", err)
+		t.Fatalf("SQLite unavailable (%v)", err)
 	}
 	defer d.Close()
 	cs := d.Companies()
@@ -433,7 +433,7 @@ func TestRecomputeAttribution(t *testing.T) {
 func TestListCompanies(t *testing.T) {
 	d, err := Open(testDSN(t))
 	if err != nil {
-		t.Skipf("postgres unavailable (%v)", err)
+		t.Fatalf("SQLite unavailable (%v)", err)
 	}
 	defer d.Close()
 	cs := d.Companies()

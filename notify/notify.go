@@ -3,7 +3,7 @@
 // 分层：本包是**叶子包**，只依赖标准库。它不认识数据库、不认识 server。渠道配置
 // 以 map[string]any 传入（对应 notification_channels.config 这一 JSONB 列），
 // 待推送内容以 Message 传入。这样拆开的好处是：签名计算、UTF-8 截断、过滤匹配这些
-// 真正容易出错的地方可以脱离 PostgreSQL 单测，宿主只需在 server 侧做编排。
+// 真正容易出错的地方可以脱离 SQLite 单测，宿主只需在 server 侧做编排。
 //
 // 并发约定：Channel 的实现必须**无状态**。同一个 Channel 实例会被多个渠道配置
 // （甚至同一渠道的多个机器人实例）并发复用，所有凭据一律从 cfg 参数传入，

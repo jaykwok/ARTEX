@@ -228,7 +228,10 @@ func TestSideArchiveRowsWithoutNewFields(t *testing.T) {
 	rows := map[string]json.RawMessage{}
 	for _, table := range []string{"side_question_sessions", "side_question_requests"} {
 		var raw []byte
-		if err = tx.QueryRow(`SELECT json_agg(t) FROM `+table+` t WHERE session_key=$1`, s.Parent.Key()).Scan(&raw); err != nil {
+		var queryErr error
+		raw, _, queryErr = queryJSONRows(tx, `SELECT * FROM `+table+` WHERE session_key=$1`, s.Parent.Key())
+		if queryErr != nil {
+			err = queryErr
 			t.Fatal(err)
 		}
 		var items []map[string]json.RawMessage

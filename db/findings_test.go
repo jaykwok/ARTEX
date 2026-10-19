@@ -15,7 +15,7 @@ import (
 func TestDeleteFinding(t *testing.T) {
 	d, err := Open(testDSN(t))
 	if err != nil {
-		t.Skipf("postgres unavailable (%v) — skipping", err)
+		t.Fatalf("SQLite unavailable (%v)", err)
 	}
 	defer d.Close()
 
@@ -64,7 +64,7 @@ func TestDeleteFinding(t *testing.T) {
 func TestFindingsPageAndStats(t *testing.T) {
 	d, err := Open(testDSN(t))
 	if err != nil {
-		t.Skipf("postgres unavailable (%v) — skipping", err)
+		t.Fatalf("SQLite unavailable (%v)", err)
 	}
 	defer d.Close()
 
@@ -219,7 +219,7 @@ func TestFindingsPageAndStats(t *testing.T) {
 func TestListFindingsPageUsesStableIDTieBreaker(t *testing.T) {
 	d, err := Open(testDSN(t))
 	if err != nil {
-		t.Skipf("postgres unavailable (%v) — skipping", err)
+		t.Fatalf("SQLite unavailable (%v)", err)
 	}
 	defer d.Close()
 
@@ -267,7 +267,7 @@ func TestListFindingsPageUsesStableIDTieBreaker(t *testing.T) {
 func TestFindingGroupsAndUnassignedPaging(t *testing.T) {
 	d, err := Open(testDSN(t))
 	if err != nil {
-		t.Skipf("postgres unavailable (%v) — skipping", err)
+		t.Fatalf("SQLite unavailable (%v)", err)
 	}
 	defer d.Close()
 
@@ -411,7 +411,7 @@ func TestFindingGroupsAndUnassignedPaging(t *testing.T) {
 func TestAddFindingFollowUpIntent(t *testing.T) {
 	d, err := Open(testDSN(t))
 	if err != nil {
-		t.Skipf("postgres unavailable (%v) — skipping", err)
+		t.Fatalf("SQLite unavailable (%v)", err)
 	}
 	defer d.Close()
 

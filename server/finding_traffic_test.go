@@ -306,20 +306,17 @@ func TestFindingTrafficArchiveV3RoundTripAndRetry(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Force a database error after validated body installation; then retry normally.
-	if _, err = s.m.pg.Exec(`CREATE FUNCTION fail_evidence_restore_test() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'restore fixture failure'; END $$`); err != nil {
+	if _, err = s.m.pg.Exec(`CREATE TRIGGER fail_evidence_restore_test BEFORE INSERT ON finding_traffic_bindings BEGIN SELECT RAISE(ABORT,'restore fixture failure'); END`); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = s.m.pg.Exec(`CREATE TRIGGER fail_evidence_restore_test BEFORE INSERT ON finding_traffic_bindings FOR EACH ROW EXECUTE FUNCTION fail_evidence_restore_test()`); err != nil {
-		t.Fatal(err)
-	}
-	defer s.m.pg.Exec(`DROP FUNCTION IF EXISTS fail_evidence_restore_test() CASCADE`)
+	defer s.m.pg.Exec(`DROP TRIGGER IF EXISTS fail_evidence_restore_test`)
 	if err = s.runOneTaskArchiveJob(); err == nil {
 		t.Fatal("expected restore failure")
 	}
 	if got, _ := s.m.pg.GetFinding(f.FindingID); got != nil {
 		t.Fatal("partial restore")
 	}
-	if _, err = s.m.pg.Exec(`DROP FUNCTION fail_evidence_restore_test() CASCADE`); err != nil {
+	if _, err = s.m.pg.Exec(`DROP TRIGGER fail_evidence_restore_test`); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = s.m.pg.QueueTaskArchiveRestore(job.ID); err != nil {

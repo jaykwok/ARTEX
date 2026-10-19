@@ -32,7 +32,7 @@
 | TypeScript 与生产构建 | 通过 | `npx tsc --noEmit`、`npm run build` |
 | 新增前端模块 Biome | 通过 | `biome check`，3 个新增模块 |
 
-在单独的可丢弃数据库中配置 `ARTEX_PG_DSN` 后，可以复现自动化检查（不要指向生产库）：
+数据库集成测试会自动创建临时 SQLite 文件，无需配置 PostgreSQL，即可复现自动化检查：
 
 ```sh
 go test -race ./agent ./db ./server ./sidequestion ./llmrec ./llmpool \

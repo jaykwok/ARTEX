@@ -16,29 +16,19 @@ import (
 	"github.com/Autumn-27/artex/intercept"
 	"github.com/Autumn-27/norma/harness"
 	"github.com/Autumn-27/norma/llm"
-	"github.com/jackc/pgx/v5/pgconn"
 )
 
-// isFKViolation reports whether err is a Postgres foreign-key violation (SQLSTATE
-// 23503) — e.g. an activity insert whose exploration_id has no parent row.
-func isFKViolation(err error) bool {
-	var pgErr *pgconn.PgError
-	return errors.As(err, &pgErr) && pgErr.Code == "23503"
-}
+// isFKViolation identifies a missing parent row in the SQLite business store.
+func isFKViolation(err error) bool { return db.IsForeignKeyViolation(err) }
 
 // dropReason classifies why an activity write was dropped, so the log can be
 // grouped/analysed by cause rather than by raw error text.
 func dropReason(err error) string {
-	var pgErr *pgconn.PgError
-	if errors.As(err, &pgErr) {
-		switch pgErr.Code {
-		case "23503":
-			return "fk_violation(23503,父exploration不存在)"
-		case "23505":
-			return "unique_violation(23505)"
-		default:
-			return "pg_error(" + pgErr.Code + ")"
-		}
+	if db.IsForeignKeyViolation(err) {
+		return "fk_violation(父exploration不存在)"
+	}
+	if db.IsUniqueViolation(err) {
+		return "unique_violation"
 	}
 	return "write_error"
 }

@@ -9,7 +9,7 @@ import (
 	"github.com/Autumn-27/artex/notify"
 )
 
-// 本文件的用例都会真连 PostgreSQL（无库时跳过）。这些 SQL 用到了
+// 本文件的用例都会真连 SQLite（无库时跳过）。这些 SQL 用到了
 // FOR UPDATE SKIP LOCKED、make_interval、JSONB、多行 IN(...) 占位符拼接，
 // 都是「编译通过但可能运行时报错」的写法，必须实跑才算验证过。
 
@@ -17,7 +17,7 @@ func notifyTestDB(t *testing.T) *DB {
 	t.Helper()
 	d, err := Open(testDSN(t))
 	if err != nil {
-		t.Skipf("postgres unavailable (%v) — skipping", err)
+		t.Fatalf("SQLite unavailable (%v)", err)
 	}
 	t.Cleanup(func() { d.Close() })
 	return d
@@ -99,7 +99,7 @@ func TestNotificationAssetNamesResolvesAndPreservesOrder(t *testing.T) {
 // 在事务里先让 notification_events 的写入必然失败（临时加一个恒 false 的约束），
 // 断言 ① 该函数报 false ② 事务没有进入 aborted 状态，后续语句仍能执行。
 //
-// 没有保存点的话，PostgreSQL 会让整个事务作废，后续任何语句都以
+// 没有保存点的话，SQLite 会让整个事务作废，后续任何语句都以
 // "current transaction is aborted" 失败——那正是「一个通知表的问题导致
 // 漏洞存不进库」的故障路径。
 //
@@ -112,7 +112,7 @@ func TestRecordNotificationEventTxUnwindsOnFailure(t *testing.T) {
 	ctx := context.Background()
 
 	// 防御性清理：若历史运行留下过这个约束，先摘掉。
-	if _, err := d.Exec(`ALTER TABLE notification_events DROP CONSTRAINT IF EXISTS notify_test_never`); err != nil {
+	if _, err := d.Exec(`DROP TRIGGER IF EXISTS notify_test_never`); err != nil {
 		t.Fatal(err)
 	}
 
@@ -124,7 +124,7 @@ func TestRecordNotificationEventTxUnwindsOnFailure(t *testing.T) {
 
 	// NOT VALID：只约束此后写入的行，不去校验库里已有的历史事件
 	// （否则存量行违规会导致约束加不上）。
-	if _, err := tx.ExecContext(ctx, `ALTER TABLE notification_events ADD CONSTRAINT notify_test_never CHECK (false) NOT VALID`); err != nil {
+	if _, err := tx.ExecContext(ctx, `CREATE TRIGGER notify_test_never BEFORE INSERT ON notification_events BEGIN SELECT RAISE(ABORT,'injected notification failure'); END`); err != nil {
 		t.Fatalf("加临时约束失败: %v", err)
 	}
 	if RecordNotificationEventTx(ctx, tx, notify.EventFindingCreated, 1, notify.Snapshot{Severity: "high"}) {
@@ -140,7 +140,7 @@ func TestRecordNotificationEventTxUnwindsOnFailure(t *testing.T) {
 	}
 	// 确认 DDL 已随回滚撤销，不给后续用例留雷。
 	var exists bool
-	if err := d.QueryRow(`SELECT EXISTS(SELECT 1 FROM pg_constraint WHERE conname='notify_test_never')`).Scan(&exists); err != nil {
+	if err := d.QueryRow(`SELECT EXISTS(SELECT 1 FROM sqlite_schema WHERE type='trigger' AND name='notify_test_never')`).Scan(&exists); err != nil {
 		t.Fatal(err)
 	}
 	if exists {
@@ -291,7 +291,7 @@ func TestClaimExpiredLeaseRecovers(t *testing.T) {
 		t.Fatalf("首次领取失败: %v (%d 条)", err, len(first))
 	}
 	// 把租约手动推到过去，模拟「租约已过期」。
-	if _, err := d.Exec(`UPDATE notification_deliveries SET next_attempt_at = now() - interval '1 minute' WHERE id=$1`, first[0].ID); err != nil {
+	if _, err := d.Exec(`UPDATE notification_deliveries SET next_attempt_at = time_add(now(), -60) WHERE id=$1`, first[0].ID); err != nil {
 		t.Fatal(err)
 	}
 	second, err := d.ClaimRealtimeDeliveries(ctx, ch.ID, 10, time.Minute)
@@ -355,7 +355,7 @@ func TestDigestBatchDueAndStableBatchID(t *testing.T) {
 	}
 
 	// 把三条投递的创建时间一起推老，模拟一个攒够周期的批次。
-	if _, err := d.Exec(`UPDATE notification_deliveries SET created_at = now() - interval '40 minutes' WHERE channel_id=$1`, ch.ID); err != nil {
+	if _, err := d.Exec(`UPDATE notification_deliveries SET created_at = time_add(now(), -2400) WHERE channel_id=$1`, ch.ID); err != nil {
 		t.Fatal(err)
 	}
 	due, err = d.DigestBatchDue(ctx, ch.ID, 30*time.Minute)
@@ -397,7 +397,7 @@ func TestDigestBatchDueAndStableBatchID(t *testing.T) {
 		t.Fatal(err)
 	}
 	// 把租约推到过去，模拟退避时间已到。
-	if _, err := d.Exec(`UPDATE notification_deliveries SET next_attempt_at = now() - interval '1 minute' WHERE channel_id=$1`, ch.ID); err != nil {
+	if _, err := d.Exec(`UPDATE notification_deliveries SET next_attempt_at = time_add(now(), -60) WHERE channel_id=$1`, ch.ID); err != nil {
 		t.Fatal(err)
 	}
 	reclaimed, err := d.ClaimDigestBatch(ctx, ch.ID, MaxDigestBatchSize, time.Minute)

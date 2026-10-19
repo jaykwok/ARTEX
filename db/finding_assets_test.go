@@ -10,8 +10,8 @@ import (
 // t.Cleanup):t.Cleanup 跑在测试函数返回之后,那时 defer d.Close() 已经把连接关了,
 // 清理会静默失败并把脏数据留在共享开发库里。
 func cleanupTreeFixtures(d *DB, taskID int64, rootDomains ...string) {
-	d.Exec(`DELETE FROM assets WHERE root_domain = ANY($1::text[])`, rootDomains) //nolint:errcheck
-	d.DeleteFindingsByTask(taskID)                                                //nolint:errcheck
+	d.Exec(`DELETE FROM assets WHERE root_domain IN (SELECT value FROM json_each($1))`, rootDomains) //nolint:errcheck
+	d.DeleteFindingsByTask(taskID)                                                                   //nolint:errcheck
 }
 
 // seedTreeAsset inserts one asset row.
@@ -51,7 +51,7 @@ func nodeByKey(tree *FindingAssetTree, key string) *FindingAssetNode {
 func TestBuildFindingAssetTree(t *testing.T) {
 	d, err := Open(testDSN(t))
 	if err != nil {
-		t.Skipf("postgres unavailable (%v) — skipping", err)
+		t.Fatalf("SQLite unavailable (%v)", err)
 	}
 	defer d.Close()
 
@@ -157,7 +157,7 @@ func TestBuildFindingAssetTree(t *testing.T) {
 func TestFindingAssetScopeFilter(t *testing.T) {
 	d, err := Open(testDSN(t))
 	if err != nil {
-		t.Skipf("postgres unavailable (%v) — skipping", err)
+		t.Fatalf("SQLite unavailable (%v)", err)
 	}
 	defer d.Close()
 
