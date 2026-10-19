@@ -39,7 +39,7 @@ git checkout e6ec569
 - <https://github.com/jaykwok/ARTEX/archive/e6ec569.zip>
 - <https://github.com/jaykwok/ARTEX/archive/e6ec569.tar.gz>
 
-原始版本同时也以 **`v0.3.15` Release** 提供各平台预编译包，可直接从 [Releases](https://github.com/jaykwok/ARTEX/releases) 下载。
+原始版本同时也以 **`e6ec569`** Release 提供各平台预编译包（Release 标题为 v0.3.15），可直接从 [Releases](https://github.com/jaykwok/ARTEX/releases) 下载。
 
 原始项目（`Autumn-27/ARTEX`）的提交历史与 `v0.3.15` 及更早的版本号均保留在本仓库中；上游仓库当前无法公开访问。
 
