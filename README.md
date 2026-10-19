@@ -4,16 +4,50 @@
 
 AI 自主渗透测试系统（Go 后端 + Next.js 前端）
 
-
-🌐 **在线 Demo**： [https://artex-demo.vercel.app/](https://artex-demo.vercel.app/)
+**v1.0.0** · 基于原版 ARTEX v0.3.15（`e6ec569`）的自维护修改版
 
 </div>
 
 ---
 
-## 截图预览
+## 版本说明（v1.0.0）
 
-> 完整交互见[在线 Demo](https://artex-demo.vercel.app/)。
+本仓库 [`jaykwok/ARTEX`](https://github.com/jaykwok/ARTEX) 是 **ARTEX 的自维护修改版**。自 **v1.0.0** 起单独打标签发布，用于与原始项目的提交和版本号区分。
+
+- **原始版本**：ARTEX **v0.3.15**，对应提交 [`e6ec569`](https://github.com/jaykwok/ARTEX/commit/e6ec56999175509551a1e43a3ee3b053d0941bd9)（2026-10-07）。`v0.3.15` 及更早的版本号属于原始项目；`e6ec569` 之后提交的内容均为本仓库的修改。
+- **本仓库 v1.0.0**：基于 `e6ec569`，相对原版仅做以下修改，其余功能保持不变：
+  - 移除**资产拦截**功能：删除「系统 → 资产拦截」页、全局 `.gov` / `.gov.cn` / `.edu` / `.edu.cn` 黑名单、任务级拦截 / 允许规则、任务模板中的拦截规则，以及 `add_intent` / `insert_assets` 执行前的资产闸门与对应 API；
+  - 移除内置命令拦截规则「删除类接口路径」，其余命令拦截规则不变；
+  - 移除登录前的「使用须知与免责声明」弹窗，登录不再需要勾选同意；
+  - 一键更新源改为本仓库 `jaykwok/ARTEX`，Docker Compose 改为从源码本地构建镜像（不再拉取已下架的 `autumn27/artex`）。
+- 完整变更记录见 [CHANGELOG.md](CHANGELOG.md)。
+
+> 下文**安装、使用、配置与架构等章节保留原版 v0.3.15 的说明**，对 v1.0.0 同样适用；涉及更新源与 Docker 构建的差异已按本仓库同步。
+
+### 恢复到原始版本（v0.3.15 / `e6ec569`）
+
+如果需要未做上述修改的原始版本，检出 `e6ec569` 即可：
+
+```bash
+git clone https://github.com/jaykwok/ARTEX.git
+cd ARTEX
+git checkout e6ec569
+```
+
+也可以直接下载该提交的源码包：
+
+- <https://github.com/jaykwok/ARTEX/archive/e6ec569.zip>
+- <https://github.com/jaykwok/ARTEX/archive/e6ec569.tar.gz>
+
+原始版本同时也以 **`v0.3.15` Release** 提供各平台预编译包，可直接从 [Releases](https://github.com/jaykwok/ARTEX/releases) 下载。
+
+原始项目（`Autumn-27/ARTEX`）的提交历史与 `v0.3.15` 及更早的版本号均保留在本仓库中；上游仓库当前无法公开访问。
+
+> 回退前建议先备份 `./data` 与数据库。v1.0.0 **不会删除**旧库中资产拦截相关的表和列：旧库可直接回退使用；若用 v1.0.0 新建的库再回退，`e6ec569` 首次启动时也会按原 `schema.sql` 自动补建相关表。
+
+---
+
+## 截图预览
 
 | 仪表盘（总览 / Token 消耗 / 活动流） | 任务列表 |
 | :---: | :---: |
@@ -48,13 +82,12 @@ AI 自主渗透测试系统（Go 后端 + Next.js 前端）
 
 ## 审批记录详情
 
-全局「审批记录」、任务内「拦截审批」及对话中的审批卡片均支持展开查看详情。展示结构参考
-[AegisHook 的审批详情组件](https://github.com/RuoJi6/AegisHook/blob/main/web/src/components/CallDetail.vue)，沿用 ARTEX 的组件和主题：
+全局「审批记录」、任务内「拦截审批」及对话中的审批卡片均支持展开查看详情。
 
 
 ## 资产同步（ScopeSentry）
 
-支持从 [ScopeSentry](https://github.com/Autumn-27/ScopeSentry) 直接同步资产数据，免去重复收集：
+支持从 ScopeSentry 直接同步资产数据，免去重复收集：
 
 - 在「**资产同步**」页填 ScopeSentry 的地址与 API Key，接入数据源；
 - 按**项目**或**任务**维度选择要同步的目标与资产类型（域名 / 子域 / IP / 端口 / 站点 / 端点…）；
@@ -128,7 +161,7 @@ CGO_ENABLED=0 go build -tags embedui -o artex ./cmd/artex
 
 ```bash
 ./build.sh --release
-# 产物：dist/artex-0.3.3-*.zip
+# 产物：dist/artex-1.0.0-*.zip（在 v1.0.0 tag 上构建时）
 ```
 
 UPX 自解压二进制可能与部分 Linux 内核、虚拟化环境或安全策略不兼容，因此默认不启用。可用 `ARTEX_TARGETS` 自定义目标；确认目标运行环境兼容时，可显式传入 `--upx` 进一步缩小二进制：
@@ -159,7 +192,12 @@ ARTEX_TARGETS=linux/amd64,windows/amd64 ./build.sh --release
 
 本地直接启动时，`start.sh` 不会自动读取 `.env`；必须将变量导出到进程环境。Docker Compose 部署从源码本地构建镜像，版本号缺省为 `dev`，而 `dev` 构建会禁用页面一键更新——Docker 下请用 `./update.sh` 或 `git pull && docker compose up -d --build artex` 升级。
 
-需要先在本仓库发布非 draft、非 prerelease 的正式 Release，并附上 `artex-<版本>-<os>-<arch>.zip` 和 `SHA256SUMS`，页面才能提供可安装更新。仓库里只有源码时还不能在线升级。现有 Release 工作流会在推送 `v*` tag 时为当前仓库生成这些附件。
+需要先在本仓库发布非 draft、非 prerelease 的正式 Release，并附上 `artex-<版本>-<os>-<arch>.zip` 和 `SHA256SUMS`，页面才能提供可安装更新。仓库里只有源码时还不能在线升级。现有 Release 工作流会在推送 `v*` tag 时为当前仓库生成这些附件，例如发布 v1.0.0：
+
+```bash
+git tag -a v1.0.0 -m "ARTEX v1.0.0"
+git push origin v1.0.0
+```
 
 ### 方式一：页面一键更新（推荐）
 
@@ -190,7 +228,7 @@ cd ARTEX
 
 ```bash
 cd ARTEX
-git pull                       # 拉取最新源码（可 git checkout v0.3.15 固定版本）
+git pull                       # 拉取最新源码（可 git checkout v1.0.0 固定版本；原始版本用 e6ec569）
 docker compose build artex     # 从源码本地重建镜像
 docker compose up -d artex     # 换新镜像重启 → 自动迁移 schema
 docker image prune -f          # 清理旧镜像（可选）
@@ -298,7 +336,7 @@ server {
 
 ## 系统技术架构
 
-ARTEX 是一套 **LLM 多 agent 驱动的自主渗透系统**：Go 单体后端（内嵌 Next.js 前端）+ PostgreSQL，agent 能力由 [`norma`](https://github.com/Autumn-27/norma) SDK 提供（`agentcore` / `tool` / `permission` / `harness` / `memory` / `transcript`）。核心是**双图架构**，以及围绕它的两条自主性机制：**worker 间过程级信息交换**与 **planner 多轮共享 todolist 稳定攻击链路**。
+ARTEX 是一套 **LLM 多 agent 驱动的自主渗透系统**：Go 单体后端（内嵌 Next.js 前端）+ PostgreSQL，agent 能力由 `norma` SDK 提供（`agentcore` / `tool` / `permission` / `harness` / `memory` / `transcript`）。核心是**双图架构**，以及围绕它的两条自主性机制：**worker 间过程级信息交换**与 **planner 多轮共享 todolist 稳定攻击链路**。
 
 ### 总体分层
 
@@ -465,22 +503,6 @@ flowchart TB
 于是攻击链在“事件驱动 + 无状态会话”的环境下依然**稳定推进、不重复、不错序**——这是 ARTEX 能自主走完多步利用链的关键。
 
 ---
-
-## 交流群
-
-扫码关注微信公众号 **SecSentry**，在公众号后台私信即可入群交流。
-
-<div align="center">
-
-<img src="screenshots/wx.png" alt="微信公众号 SecSentry" width="480" />
-
-</div>
-
----
-## 参考
-
-https://github.com/oritera/Cairn
-
 
 ## 许可与免责声明
 

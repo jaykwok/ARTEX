@@ -2,7 +2,9 @@
 
 本项目的重要变更记录在此文件中，格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
-## [Unreleased]
+## [1.0.0] - 2026-10-19
+
+> 本版本为基于原版 ARTEX v0.3.15（提交 `e6ec569`）的自维护修改版，自本版起版本号独立为 `v1.0.0`。
 
 ### 拦截
 
