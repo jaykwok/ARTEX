@@ -58,7 +58,7 @@ export default function MCPPage() {
   const [refreshing, setRefreshing] = React.useState(false);
 
   const load = React.useCallback(() => {
-    api.agents().then(setAgents).catch(() => {});
+    api.agents().then(setAgents).catch((err: unknown) => toast.error(err instanceof Error ? err.message : "加载失败，请重试"));
     api
       .mcpServers()
       .then((ss) => {
@@ -67,10 +67,10 @@ export default function MCPPage() {
           api
             .resourceVisibility("mcp", s.id)
             .then((ids) => setVisibility((v) => ({ ...v, [s.id]: ids })))
-            .catch(() => {}),
+            .catch((err: unknown) => toast.error(err instanceof Error ? err.message : "加载失败，请重试")),
         );
       })
-      .catch(() => {});
+      .catch((err: unknown) => toast.error(err instanceof Error ? err.message : "加载失败，请重试"));
   }, []);
   React.useEffect(() => {
     load();

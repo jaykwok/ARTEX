@@ -22,11 +22,11 @@ func TestCoreTaskLifecyclePG(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SQLite unavailable (%v)", err)
 	}
-	defer m.Close()
+	t.Cleanup(func() { m.Close() })
 	td := t.TempDir()
-	s := New(context.Background(), m, td, td, td)
+	s := newTestServer(t, context.Background(), m, td, td, td)
 	h := s.Handler()
-	tok, err := signJWT(s.jwtKey)
+	tok, err := signTestJWT(t, s)
 	if err != nil {
 		t.Fatalf("sign jwt: %v", err)
 	}

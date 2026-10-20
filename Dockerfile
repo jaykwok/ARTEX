@@ -25,7 +25,7 @@ COPY web/ ./
 RUN npm run build:static
 
 # ── 源码编译：内嵌前端的 Go 单二进制 ────────────────
-FROM golang:1.26-bookworm AS gobuild
+FROM golang:1.27.2-bookworm AS gobuild
 # .dockerignore 排除了 .git，镜像内拿不到 git describe，版本号由构建参数传入。
 # 缺省 dev：页面一键更新会对 dev 构建禁用，Docker 部署本就应通过重建镜像升级。
 ARG ARTEX_VERSION=dev
@@ -41,11 +41,11 @@ RUN CGO_ENABLED=0 go build -tags embedui -trimpath \
 # ── 运行时基础层（两种方式共用）─────────────────────
 FROM python:3.12-slim-bookworm AS runtime
 # 常用工具：ripgrep / curl / vim，加一批 recon 常备件（按需增删）。
-# Node 从 NodeSource 装 20.x：bookworm 自带的 apt nodejs 是 18，Playwright 要求 >=20。
+# Node 从 NodeSource 装 22.x：bookworm 自带的 apt nodejs 是 18，Playwright 要求 >=20。
 RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates ripgrep curl wget vim git jq unzip \
       dnsutils iputils-ping netcat-openbsd inetutils-telnet whois nmap \
-    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/*
 # 预装 Playwright MCP 与 CLI（全局），运行时不再 npx 联网下载。
@@ -53,7 +53,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # @playwright/cli：提供 playwright-cli，装完顺带 --help 验证可执行。
 # 再装 playwright（提供浏览器管理），装完用 --with-deps 预置 chromium 及其系统依赖，
 # 这样容器内 MCP/CLI 首次启动即可用，不再联网下载浏览器。
-RUN npm install -g @playwright/mcp@latest @playwright/cli@latest playwright@latest \
+RUN npm install -g @playwright/mcp@0.0.83 @playwright/cli@0.1.22 playwright@1.64.1 \
     && playwright-cli --help \
     && playwright install --with-deps chromium \
     && rm -rf /var/lib/apt/lists/*

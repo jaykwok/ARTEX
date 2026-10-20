@@ -68,7 +68,7 @@ function buildTree(entries: string[]): TreeNode[] {
   const root: TreeNode[] = [];
   const dirMap = new Map<string, TreeNode>();
 
-  function ensureDir(dirPath: string, parentNodes: TreeNode[]): TreeNode[] {
+  function ensureDir(dirPath: string): TreeNode[] {
     if (dirMap.has(dirPath)) return dirMap.get(dirPath)!.children;
     const parts = dirPath.split("/");
     let nodes = root;
@@ -88,7 +88,7 @@ function buildTree(entries: string[]): TreeNode[] {
   for (const entry of [...entries].sort()) {
     if (entry.endsWith("/")) {
       // Explicit directory entry — ensure the node exists (may already be created)
-      ensureDir(entry.slice(0, -1), root);
+      ensureDir(entry.slice(0, -1));
     } else {
       // File — ensure parent dirs exist, then push file node
       const parts = entry.split("/");
@@ -342,17 +342,17 @@ export default function SkillsPage() {
 
   // ── Data ──────────────────────────────────────────────────────────────────
   const load = React.useCallback(() => {
-    api.agents().then(setAgents).catch(() => {});
-    api.mcpServers().then(setMcpOptions).catch(() => {});
-    api.missingSkills().then(setMissing).catch(() => {});
+    api.agents().then(setAgents).catch((err: unknown) => toast.error(err instanceof Error ? err.message : "加载失败，请重试"));
+    api.mcpServers().then(setMcpOptions).catch((err: unknown) => toast.error(err instanceof Error ? err.message : "加载失败，请重试"));
+    api.missingSkills().then(setMissing).catch((err: unknown) => toast.error(err instanceof Error ? err.message : "加载失败，请重试"));
     api.skills().then((ss) => {
       setSkills(ss);
       ss.forEach((s) =>
         api.skillVisibility(s.name)
           .then((ids) => setVisibility((v) => ({ ...v, [s.name]: ids })))
-          .catch(() => {}),
+          .catch((err: unknown) => toast.error(err instanceof Error ? err.message : "加载失败，请重试")),
       );
-    }).catch(() => {});
+    }).catch((err: unknown) => toast.error(err instanceof Error ? err.message : "加载失败，请重试"));
   }, []);
 
   React.useEffect(() => { load(); }, [load]);

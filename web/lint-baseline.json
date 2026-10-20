@@ -1,0 +1,23 @@
+{
+  "public/logo.svg | lint/a11y/noSvgWithoutTitle | Alternative text title element cannot be empty": 1,
+  "src/app/(main)/_components/sidebar/nav-main.tsx | lint/nursery/noFloatingPromises | A \"floating\" Promise was found, meaning it is not properly handled and could lead to ignored errors or unexpected behavior.": 1,
+  "src/app/(main)/function/tasks/detail/_tabs/coverage-graph-tab.tsx | lint/nursery/useNullishCoalescing | Use ?? instead of ||.": 2,
+  "src/app/(main)/system/agents/page.tsx | lint/nursery/useNullishCoalescing | Use ?? instead of ||.": 1,
+  "src/app/(main)/system/intercept/page.tsx | lint/nursery/noFloatingPromises | A \"floating\" Promise was found, meaning it is not properly handled and could lead to ignored errors or unexpected behavior.": 7,
+  "src/app/(main)/system/logs/page.tsx | lint/correctness/useExhaustiveDependencies | This hook specifies more dependencies than necessary: filtered.": 1,
+  "src/app/(main)/system/mcp/page.tsx | lint/a11y/noLabelWithoutControl | A form label must be associated with an input.": 2,
+  "src/app/(main)/system/mcp/page.tsx | lint/a11y/noStaticElementInteractions | Unexpected event handler on static element.": 2,
+  "src/app/(main)/system/mcp/page.tsx | lint/a11y/useKeyWithClickEvents | Enforce to have the onClick mouse event with the onKeyUp, the onKeyDown, or the onKeyPress keyboard event.": 2,
+  "src/app/(main)/system/mcp/page.tsx | lint/nursery/noFloatingPromises | A \"floating\" Promise was found, meaning it is not properly handled and could lead to ignored errors or unexpected behavior.": 1,
+  "src/app/(main)/system/mcp/page.tsx | lint/suspicious/useIterableCallbackReturn | This callback passed to forEach() iterable method should not return a value.": 1,
+  "src/app/(main)/system/skills/page.tsx | lint/a11y/noLabelWithoutControl | A form label must be associated with an input.": 4,
+  "src/app/(main)/system/skills/page.tsx | lint/a11y/noStaticElementInteractions | Unexpected event handler on static element.": 3,
+  "src/app/(main)/system/skills/page.tsx | lint/a11y/useKeyWithClickEvents | Enforce to have the onClick mouse event with the onKeyUp, the onKeyDown, or the onKeyPress keyboard event.": 3,
+  "src/app/(main)/system/skills/page.tsx | lint/nursery/noFloatingPromises | A \"floating\" Promise was found, meaning it is not properly handled and could lead to ignored errors or unexpected behavior.": 1,
+  "src/app/(main)/system/skills/page.tsx | lint/suspicious/useIterableCallbackReturn | This callback passed to forEach() iterable method should not return a value.": 1,
+  "src/app/(main)/system/tools/page.tsx | lint/a11y/noLabelWithoutControl | A form label must be associated with an input.": 5,
+  "src/components/agent-editor.tsx | lint/a11y/noLabelWithoutControl | A form label must be associated with an input.": 10,
+  "src/components/agent-editor.tsx | lint/nursery/noFloatingPromises | A \"floating\" Promise was found, meaning it is not properly handled and could lead to ignored errors or unexpected behavior.": 5,
+  "src/components/exploration-graph.tsx | lint/suspicious/useIterableCallbackReturn | This callback passed to forEach() iterable method should not return a value.": 3,
+  "src/components/todo-popover.tsx | lint/nursery/noFloatingPromises | A \"floating\" Promise was found, meaning it is not properly handled and could lead to ignored errors or unexpected behavior.": 1
+}

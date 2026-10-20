@@ -222,7 +222,7 @@ cd ARTEX
 
 脚本先可选 `git pull` 拉取最新代码，再让你选 **① Docker 更新** 或 **② 本地编译更新**（与 `install.sh` 对应）：
 
-- **① Docker**：用拉取后的源码本地重建 artex 镜像（`docker compose build artex`）→ `docker compose up -d artex`（换新镜像重启即自动迁移）。
+- **① Docker**：用拉取后的源码本地重建 artex 镜像（`docker compose build artex`）→ `docker compose up -d artex`（换新镜像启动时检查 SQLite schema）。
 - **② 本地**：重建前端静态产物 → 重新编译 `./artex`（完成后重启进程生效）。
 
 ### 方式三：Docker Compose（手动）
@@ -231,7 +231,7 @@ cd ARTEX
 cd ARTEX
 git pull                       # 拉取最新源码（可 git checkout v1.0.1 固定版本；原始版本用 e6ec569）
 docker compose build artex     # 从源码本地重建镜像
-docker compose up -d artex     # 换新镜像重启 → 自动迁移 schema
+docker compose up -d artex     # 换新镜像启动 → 检查 SQLite schema
 docker image prune -f          # 清理旧镜像（可选）
 ```
 
@@ -538,3 +538,16 @@ flowchart TB
 ### 免责声明
 
 本项目按“现状（AS IS）”提供，不附带任何明示或默示的担保。作者及贡献者不对使用本工具（无论使用方式是否得当）所导致的任何直接或间接损失、数据丢失、系统损坏或法律纠纷承担责任。**下载、安装或使用本项目，即表示你已阅读、理解并同意上述全部条款。**
+
+
+### 审计修复后的运行约定
+
+- 文件管理器仅管理 `data/workspace/`，不再暴露整个数据目录。该目录默认创建为空；业务库及 WAL/SHM、流量、证据、归档包和任务运行目录保持在其外，不自动搬动已有文件。任务运行产物仍随任务归档保存，文件管理器用于独立上传和整理文件。备份仍须覆盖完整数据目录。
+- `ARTEX_DB_PATH` / `database.path` 必须指向文件管理器目录之外。禁止把 `workspace/` 本身替换为符号链接或目录联接。文件管理器的链接无法逃逸工作区；覆盖文件采用原子替换，不截断硬链接指向的内部数据。
+- 修改密码或管理员重置密码会撤销所有既有登录会话，当前浏览器也必须重新登录；本次升级会使旧签名方式的会话失效一次。
+- 默认同源部署；浏览器跨域 API 支持 Bearer `Authorization` 与 `PATCH` 预检，不提供跨域 cookie credentials。
+- 构建要求 Go 1.27.2 或更高安全补丁版本。`install.sh`、`update.sh` 与 `build.sh` 共用版本解析；带未提交改动的源码仍显示 dirty 版本，正式构建应使用干净的版本标签或显式 `ARTEX_BUILD_VERSION`。
+- 开发前端固定为 `http://127.0.0.1:5173`，默认仅监听本机。正式部署继续使用 Go 内嵌静态页面，Node 服务仅用于开发或单独的前端托管。
+- 已删除缺少镜像和 fixture 的 `docker-compose.bench.yml`；当前仓库不提供该旧基准入口。
+- PR、main push 及发布前执行 Go 测试/vet、前端类型检查/测试/lint、依赖扫描和全新 SQLite 启动检查。`npm run lint` 使用逐文件逐规则计数基线，禁止新增错误及保留已解决的基线项；`npm run lint:strict` 可查看全部既有债务，修改基线须审阅 `web/lint-baseline.json` 的差异。
+- 发布只接受 `vMAJOR.MINOR.PATCH[-prerelease]` 格式的 SemVer 标签（不接受 build metadata 后缀）。候选版本标为 prerelease，旧版本重建和候选版本均不能提升 Docker/GitHub `latest`。GitHub Release 等待所有平台包与镜像完成；镜像构建成功到 Release 建立之间仍可能短暂可见镜像标签，二者并非跨服务原子事务。

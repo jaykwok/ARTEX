@@ -1,7 +1,9 @@
 package server
 
 import (
+	"crypto/hmac"
 	"crypto/rand"
+	"crypto/sha256"
 	"fmt"
 	"log"
 	"math/big"
@@ -95,7 +97,7 @@ func signJWT(key []byte) (string, error) {
 // verifyJWT returns true when tokenStr is a valid, non-expired HS256 token.
 func verifyJWT(tokenStr string, key []byte) bool {
 	t, err := jwt.Parse(tokenStr, func(t *jwt.Token) (any, error) {
-		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+		if t.Method != jwt.SigningMethodHS256 {
 			return nil, fmt.Errorf("unexpected signing method")
 		}
 		return key, nil
@@ -129,7 +131,12 @@ func (s *Server) requireAuth(h http.Handler) http.Handler {
 			writeErr(w, 401, "未授权")
 			return
 		}
-		if !verifyJWT(tok, s.jwtKey) {
+		hash, _, err := s.m.pg.GetSetting(authPassKey)
+		if err != nil {
+			writeErr(w, 503, errDataSourceUnavailable)
+			return
+		}
+		if hash == "" || !verifyJWT(tok, s.sessionKey(hash)) {
 			writeErr(w, 401, "token 无效或已过期")
 			return
 		}
@@ -197,7 +204,7 @@ func (s *Server) authInit(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 403, "密码已设置")
 		return
 	}
-	tok, err := signJWT(s.jwtKey)
+	tok, err := signJWT(s.sessionKey(string(hash)))
 	if err != nil {
 		writeErr(w, 500, "token 生成失败")
 		return
@@ -213,7 +220,12 @@ func (s *Server) authChangePassword(w http.ResponseWriter, r *http.Request) {
 	if pg == nil {
 		return
 	}
-	if !verifyJWT(extractToken(r), s.jwtKey) {
+	sessionHash, _, err := pg.GetSetting(authPassKey)
+	if err != nil {
+		writeErr(w, 503, errDataSourceUnavailable)
+		return
+	}
+	if sessionHash == "" || !verifyJWT(extractToken(r), s.sessionKey(sessionHash)) {
 		writeErr(w, 401, "未授权")
 		return
 	}
@@ -289,10 +301,18 @@ func (s *Server) authLogin(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 401, "用户名或密码错误")
 		return
 	}
-	tok, err := signJWT(s.jwtKey)
+	tok, err := signJWT(s.sessionKey(string(hash)))
 	if err != nil {
 		writeErr(w, 500, "token 生成失败")
 		return
 	}
 	writeJSON(w, 200, map[string]any{"token": tok})
+}
+
+// The persisted bcrypt salt changes on every password reset, including resets to
+// the same password. No password material is embedded in the JWT.
+func (s *Server) sessionKey(hash string) []byte {
+	mac := hmac.New(sha256.New, s.jwtKey)
+	mac.Write([]byte(hash))
+	return mac.Sum(nil)
 }

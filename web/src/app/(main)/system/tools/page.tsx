@@ -375,8 +375,8 @@ export default function ToolsPage() {
   }, []);
   React.useEffect(() => {
     reload();
-    api.agents().then(setAgents).catch(() => {});
-    api.settings().then((s) => setCaptureOn(!!s.traffic_capture)).catch(() => {});
+    api.agents().then(setAgents).catch((err: unknown) => toast.error(err instanceof Error ? err.message : "加载失败，请重试"));
+    api.settings().then((s) => setCaptureOn(!!s.traffic_capture)).catch((err: unknown) => toast.error(err instanceof Error ? err.message : "加载失败，请重试"));
   }, [reload]);
 
   const [query, setQuery] = React.useState("");

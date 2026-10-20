@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { toast } from "sonner";
 import {
   RadioIcon,
   SearchIcon,
@@ -46,6 +47,7 @@ import {
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
+import { deleteTaskRecords } from "@/lib/llm-record-deletion";
 import type { LLMRecordItem, LLMRecordDetail, LLMTask } from "@/lib/types";
 
 function fmtTime(ts: string) {
@@ -168,7 +170,7 @@ export default function LLMRecordsPage() {
     api
       .settings()
       .then((s) => { if (alive) setRecEnabled(!!s.llm_record); })
-      .catch(() => {});
+      .catch((err: unknown) => { if (alive) toast.error(err instanceof Error ? err.message : "加载失败，请重试"); });
     return () => { alive = false; };
   }, []);
 
@@ -178,7 +180,8 @@ export default function LLMRecordsPage() {
     try {
       const s = await api.setSettings({ llm_record: on });
       setRecEnabled(!!s.llm_record);
-    } catch {
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "录制设置保存失败");
       setRecEnabled(!on); // revert on failure
     } finally {
       setRecBusy(false);
@@ -191,12 +194,14 @@ export default function LLMRecordsPage() {
     return () => clearTimeout(t);
   }, [session]);
 
-  // Reset page on filter change.
+  // Filters trigger a page reset even though only setPage is used in the body.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: filters intentionally trigger this reset.
   React.useEffect(() => {
     setPage(0);
   }, [sessionQ, model, size, pickedTask]);
 
   // Load list.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: reloadTick intentionally triggers refetch after deletion.
   React.useEffect(() => {
     let alive = true;
     setLoading(true);
@@ -207,30 +212,30 @@ export default function LLMRecordsPage() {
         setRecords(r.records ?? []);
         setTotal(r.total ?? 0);
       })
-      .catch(() => {})
+      .catch((err: unknown) => { if (alive) toast.error(err instanceof Error ? err.message : "加载失败，请重试"); })
       .finally(() => alive && setLoading(false));
     api
       .llmTasks()
       .then((r) => { if (alive) setTasks(r.tasks ?? []); })
-      .catch(() => {});
+      .catch((err: unknown) => { if (alive) toast.error(err instanceof Error ? err.message : "加载失败，请重试"); });
     return () => { alive = false; };
   }, [page, size, sessionQ, model, pickedTask, reloadTick]);
 
   // Delete every LLM record for the picked task, then refetch.
   const confirmDelete = () => {
-    setDeleting(true);
-    api
-      .llmRecordsDeleteTask(pickedTask)
-      .then(() => {
+    void deleteTaskRecords(
+      () => api.llmRecordsDeleteTask(pickedTask),
+      () => {
         setDeleteOpen(false);
         setSelected(null);
         setDetail(null);
         setPickedTask("");
         setPage(0);
         setReloadTick((t) => t + 1);
-      })
-      .catch(() => {})
-      .finally(() => setDeleting(false));
+      },
+      (message) => toast.error(message),
+      setDeleting,
+    );
   };
 
   // Lazy-load full request/response when a row is selected.
@@ -245,7 +250,7 @@ export default function LLMRecordsPage() {
     api
       .llmRecordDetail(selected.id)
       .then((d) => { if (alive) setDetail(d); })
-      .catch(() => {})
+      .catch((err: unknown) => { if (alive) toast.error(err instanceof Error ? err.message : "加载失败，请重试"); })
       .finally(() => { if (alive) setDetailLoading(false); });
     return () => { alive = false; };
   }, [selected]);

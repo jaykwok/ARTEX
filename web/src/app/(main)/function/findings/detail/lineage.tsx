@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { toast } from "sonner";
 
 import { ExplorationGraph } from "@/components/exploration-graph";
 import { api } from "@/lib/api";
@@ -23,7 +24,7 @@ export function FindingLineageView({ findingId }: { findingId: string }) {
         setNodes(g.nodes ?? []);
         setEdges(g.edges ?? []);
       })
-      .catch(() => {})
+      .catch((err: unknown) => { if (alive) toast.error(err instanceof Error ? err.message : "加载失败，请重试"); })
       .finally(() => {
         if (alive) setLoaded(true);
       });

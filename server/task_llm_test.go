@@ -643,7 +643,7 @@ func TestProfileDeleteRestoresQuotaBlockedIntentWhenFallbackAvailable(t *testing
 	if err != nil {
 		t.Fatalf("SQLite unavailable (%v)", err)
 	}
-	defer m.Close()
+	t.Cleanup(func() { m.Close() })
 
 	profileID, err := m.pg.SaveProfile(&db.LLMProfile{
 		Name:   fmt.Sprintf("delete-quota-fallback-%d", time.Now().UnixNano()),

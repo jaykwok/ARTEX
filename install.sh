@@ -2,6 +2,8 @@
 # ARTEX 安装脚本：① 全部 Docker  ② 本地编译运行
 set -euo pipefail
 cd "$(cd "$(dirname "$0")" && pwd)"
+. ./scripts/version.sh
+export ARTEX_VERSION="$ARTEX_BUILD_VERSION"
 
 info(){ printf '\033[36m[*]\033[0m %s\n' "$*"; }
 ok(){   printf '\033[32m[+]\033[0m %s\n' "$*"; }
@@ -56,7 +58,7 @@ install_local(){
   fi
 
   # go 环境检查
-  command -v go >/dev/null 2>&1 || die "未检测到 Go，请先安装 Go（>=1.26）：https://go.dev/dl/"
+  command -v go >/dev/null 2>&1 || die "未检测到 Go，请先安装 Go（>=1.27.2）：https://go.dev/dl/"
   ok "Go: $(go version)"
 
   # 内嵌前端需要 node 出静态产物
@@ -65,10 +67,10 @@ install_local(){
     ( cd web && npm ci && npm run build:static )
     rm -rf server/webui/dist && cp -r web/out server/webui/dist
     info "编译内嵌单二进制…"
-    CGO_ENABLED=0 go build -tags embedui -trimpath -o artex ./cmd/artex
+    CGO_ENABLED=0 go build -tags embedui -trimpath -ldflags "-X main.version=$ARTEX_BUILD_VERSION" -o artex ./cmd/artex
   else
     warn "未检测到 npm：将编译**不内嵌前端**的后端（前端需另跑 npm run dev）"
-    CGO_ENABLED=0 go build -o artex ./cmd/artex
+    CGO_ENABLED=0 go build -ldflags "-X main.version=$ARTEX_BUILD_VERSION" -o artex ./cmd/artex
   fi
   ok "编译完成 → ./artex"
 

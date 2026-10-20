@@ -2,7 +2,6 @@ package db
 
 import (
 	"net"
-	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
@@ -10,14 +9,11 @@ import (
 	"golang.org/x/net/publicsuffix"
 )
 
-// 归一化自然键 (nkey)：移植自旧 graph/id.go，去掉 StableID 哈希（PG 用 BIGSERIAL 主键 +
-// UNIQUE(type, nkey) 去重）。子资产的 nkey 内嵌父资产的 int64 id，把层级编码进键。
+// Natural keys normalize asset identity within this repository.
 
 func DomainKey(fqdn string) string {
 	return strings.TrimSuffix(strings.ToLower(strings.TrimSpace(fqdn)), ".")
 }
-
-func IPKey(ip string) string { return strings.TrimSpace(ip) }
 
 // RootDomain returns the registrable domain (eTLD+1) for a host and whether the
 // host itself IS that apex (§3.1). Edge cases (§3.1 边界处理): an IP literal or a
@@ -35,39 +31,6 @@ func RootDomain(host string) (root string, isApex bool) {
 	}
 	return etld1, h == etld1
 }
-
-func PortKey(ipID int64, proto string, port int) string {
-	return itoa(ipID) + "|" + strings.ToLower(proto) + "|" + strconv.Itoa(port)
-}
-
-func ServiceKey(portID int64, svcName string) string {
-	return itoa(portID) + "|" + strings.ToLower(svcName)
-}
-
-func SiteKey(scheme, host string, port int) string {
-	return strings.ToLower(scheme) + "|" + strings.ToLower(host) + "|" + strconv.Itoa(port)
-}
-
-func EndpointKey(siteID int64, method, urlTemplate string) string {
-	return itoa(siteID) + "|" + strings.ToUpper(method) + "|" + urlTemplate
-}
-
-func ParameterKey(endpointID int64, location, name string) string {
-	return itoa(endpointID) + "|" + strings.ToLower(location) + "|" + name
-}
-
-// NormalizeParamName 归一化参数名（endpoint.params 元素的「相同引用」判定）。
-// 规则：lower + trim，不做同义词合并(userId/user_id/uid 视为不同)。写入与查询共享此实现，
-// 保证「按参数名查同公司接口」可复现。
-func NormalizeParamName(name string) string {
-	return strings.ToLower(strings.TrimSpace(name))
-}
-
-func TechKey(name, version string) string {
-	return strings.ToLower(name) + "|" + version
-}
-
-func itoa(n int64) string { return strconv.FormatInt(n, 10) }
 
 var (
 	reNumeric = regexp.MustCompile(`^\d+$`)
@@ -98,23 +61,6 @@ func TemplatePath(path string) string {
 		}
 	}
 	return strings.Join(segs, "/")
-}
-
-// SplitURL parses a raw URL into scheme/host/port/urlTemplate/params for building
-// site/endpoint/param keys.
-func SplitURL(raw, method string) (scheme, host string, port int, urlTemplate string, params []string, err error) {
-	u, err := url.Parse(raw)
-	if err != nil {
-		return "", "", 0, "", nil, err
-	}
-	scheme = strings.ToLower(u.Scheme)
-	host = strings.ToLower(u.Hostname())
-	port = defaultPort(scheme, u.Port())
-	urlTemplate = TemplatePath(u.EscapedPath())
-	for k := range u.Query() {
-		params = append(params, k)
-	}
-	return scheme, host, port, urlTemplate, params, nil
 }
 
 func defaultPort(scheme, p string) int {

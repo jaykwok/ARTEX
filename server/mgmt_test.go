@@ -19,9 +19,9 @@ func TestMgmtAPI(t *testing.T) {
 		t.Fatal("SQLite test database unavailable")
 	}
 	td := t.TempDir()
-	s := New(context.Background(), m, td, td, td)
+	s := newTestServer(t, context.Background(), m, td, td, td)
 	h := s.Handler()
-	tok, err := signJWT(s.jwtKey)
+	tok, err := signTestJWT(t, s)
 	if err != nil {
 		t.Fatalf("sign jwt: %v", err)
 	}

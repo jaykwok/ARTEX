@@ -2,6 +2,8 @@ package server
 
 import (
 	"encoding/json"
+	"golang.org/x/crypto/bcrypt"
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -18,7 +20,7 @@ func TestAuthStatusFailsClosedWhenDataSourceUnavailable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SQLite unavailable (%v)", err)
 	}
-	defer m.Close()
+	t.Cleanup(func() { m.Close() })
 	// 关掉池子，让后续 GetSetting 返回 error 而不是 sql.ErrNoRows。
 	if err := m.pg.Close(); err != nil {
 		t.Fatal(err)
@@ -44,7 +46,7 @@ func TestAuthInitFailsClosedWhenDataSourceUnavailable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SQLite unavailable (%v)", err)
 	}
-	defer m.Close()
+	t.Cleanup(func() { m.Close() })
 	if err := m.pg.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -80,5 +82,91 @@ func TestValidatePassword(t *testing.T) {
 				t.Fatalf("validatePassword(%q)=%q, wantErr=%v", tc.pw, got, tc.wantErr)
 			}
 		})
+	}
+}
+
+func signTestJWT(t *testing.T, s *Server) (string, error) {
+	t.Helper()
+	hash, _, err := s.m.pg.GetSetting(authPassKey)
+	if err != nil {
+		return "", err
+	}
+	if hash == "" {
+		hash = "test-session-generation"
+		if err := s.m.pg.SetSetting(authPassKey, hash); err != nil {
+			return "", err
+		}
+	}
+	return signJWT(s.sessionKey(hash))
+}
+
+func TestPasswordChangeRevokesCopiedSessions(t *testing.T) {
+	m, err := NewManager(t.TempDir(), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { m.Close() })
+	s := &Server{m: m, jwtKey: []byte("test-key-32-bytes-long-for-session")}
+	hash, err := bcrypt.GenerateFromPassword([]byte("old-password"), bcrypt.MinCost)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = m.pg.SetSetting(authPassKey, string(hash)); err != nil {
+		t.Fatal(err)
+	}
+	old, err := signJWT(s.sessionKey(string(hash)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	protected := s.requireAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(204) }))
+	check := func(token string, want int) {
+		t.Helper()
+		r := httptest.NewRequest("GET", "/api/tasks", nil)
+		r.Header.Set("Authorization", "Bearer "+token)
+		w := httptest.NewRecorder()
+		protected.ServeHTTP(w, r)
+		if w.Code != want {
+			t.Fatalf("status=%d want=%d: %s", w.Code, want, w.Body.String())
+		}
+	}
+	check(old, 204)
+	req := httptest.NewRequest("POST", "/api/auth/change-password", strings.NewReader(`{"old_password":"old-password","new_password":"new-password"}`))
+	req.Header.Set("Authorization", "Bearer "+old)
+	w := httptest.NewRecorder()
+	s.authChangePassword(w, req)
+	if w.Code != 200 {
+		t.Fatal(w.Body.String())
+	}
+	check(old, 401)
+	current, _, err := m.pg.GetSetting(authPassKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fresh, err := signJWT(s.sessionKey(current))
+	if err != nil {
+		t.Fatal(err)
+	}
+	check(fresh, 204)
+	// An out-of-process administrator reset uses the same persisted password hash.
+	reset, err := bcrypt.GenerateFromPassword([]byte("reset-password"), bcrypt.MinCost)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = m.pg.SetSetting(authPassKey, string(reset)); err != nil {
+		t.Fatal(err)
+	}
+	check(fresh, 401)
+}
+
+func TestCORSAuthorizationAndPatchPreflight(t *testing.T) {
+	h := cors(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { t.Fatal("preflight reached API") }))
+	r := httptest.NewRequest("OPTIONS", "/api/tasks/1", nil)
+	r.Header.Set("Origin", "https://frontend.example")
+	r.Header.Set("Access-Control-Request-Method", "PATCH")
+	r.Header.Set("Access-Control-Request-Headers", "Authorization,Content-Type")
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, r)
+	if w.Code != 204 || !strings.Contains(w.Header().Get("Access-Control-Allow-Methods"), "PATCH") || !strings.Contains(w.Header().Get("Access-Control-Allow-Headers"), "Authorization") {
+		t.Fatalf("bad preflight: %d %v", w.Code, w.Header())
 	}
 }

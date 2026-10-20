@@ -1,0 +1,285 @@
+ARTEX audit repair validation - 2026-10-20 Asia/Singapore
+
+--- go-test-complete.log ---
+ok  	github.com/Autumn-27/artex/agent	4.513s
+ok  	github.com/Autumn-27/artex/cmd/artex	0.703s
+ok  	github.com/Autumn-27/artex/config	0.075s
+ok  	github.com/Autumn-27/artex/db	21.981s
+?   	github.com/Autumn-27/artex/enrich	[no test files]
+ok  	github.com/Autumn-27/artex/evidence	2.807s
+ok  	github.com/Autumn-27/artex/guard	0.097s
+ok  	github.com/Autumn-27/artex/intercept	0.087s
+?   	github.com/Autumn-27/artex/internal/testdb	[no test files]
+ok  	github.com/Autumn-27/artex/llmpool	0.265s
+ok  	github.com/Autumn-27/artex/llmrec	0.334s
+ok  	github.com/Autumn-27/artex/mcphttp	0.084s
+ok  	github.com/Autumn-27/artex/notify	0.547s
+?   	github.com/Autumn-27/artex/report	[no test files]
+ok  	github.com/Autumn-27/artex/selfupdate	0.104s
+ok  	github.com/Autumn-27/artex/server	23.667s
+ok  	github.com/Autumn-27/artex/sidequestion	0.225s
+ok  	github.com/Autumn-27/artex/traffic	5.964s
+
+--- go-vet-complete.log ---
+
+--- go-verify-final.log ---
+all modules verified
+
+--- govuln-final.log ---
+Fetching vulnerabilities from the database...
+
+Checking the code against the vulnerabilities...
+
+The package pattern matched the following 18 root packages:
+  github.com/Autumn-27/artex/config
+  github.com/Autumn-27/artex/notify
+  github.com/Autumn-27/artex/sidequestion
+  github.com/Autumn-27/artex/db
+  github.com/Autumn-27/artex/intercept
+  github.com/Autumn-27/artex/guard
+  github.com/Autumn-27/artex/llmrec
+  github.com/Autumn-27/artex/agent
+  github.com/Autumn-27/artex/selfupdate
+  github.com/Autumn-27/artex/enrich
+  github.com/Autumn-27/artex/traffic
+  github.com/Autumn-27/artex/evidence
+  github.com/Autumn-27/artex/llmpool
+  github.com/Autumn-27/artex/mcphttp
+  github.com/Autumn-27/artex/report
+  github.com/Autumn-27/artex/server
+  github.com/Autumn-27/artex/cmd/artex
+  github.com/Autumn-27/artex/internal/testdb
+Govulncheck scanned the following 45 modules and the go1.27.2 standard library:
+  github.com/Autumn-27/artex
+  github.com/Autumn-27/norma@v0.4.3
+  github.com/andybalholm/brotli@v1.2.1
+  github.com/asaskevich/govalidator@v0.0.0-20230301143203-a9d515a09cc2
+  github.com/aymerick/douceur@v0.2.0
+  github.com/dustin/go-humanize@v1.0.1
+  github.com/gaissmai/bart@v0.26.0
+  github.com/golang-jwt/jwt/v5@v5.3.1
+  github.com/golang/groupcache@v0.0.0-20210331224755-41bb18bfe9da
+  github.com/google/uuid@v1.6.0
+  github.com/gorilla/css@v1.0.1
+  github.com/gorilla/websocket@v1.5.3
+  github.com/hinshun/vt10x@v0.0.0-20220301184237-5011da428d02
+  github.com/klauspost/compress@v1.18.7
+  github.com/lqqyt2423/go-mitmproxy@v1.9.2
+  github.com/mattn/go-isatty@v0.0.20
+  github.com/microcosm-cc/bluemonday@v1.0.27
+  github.com/miekg/dns@v1.1.72
+  github.com/ncruces/go-strftime@v1.0.0
+  github.com/pkg/errors@v0.9.1
+  github.com/projectdiscovery/blackrock@v0.0.1
+  github.com/projectdiscovery/cdncheck@v1.2.13
+  github.com/projectdiscovery/dnsx@v1.2.3
+  github.com/projectdiscovery/retryabledns@v1.0.111
+  github.com/projectdiscovery/utils@v0.7.3
+  github.com/remyoudompheng/bigfft@v0.0.0-20230129092748-24d4a6f8daec
+  github.com/saintfish/chardet@v0.0.0-20230101081208-5e3ef4b5456d
+  github.com/satori/go.uuid@v1.2.0
+  github.com/sirupsen/logrus@v1.9.4
+  github.com/tidwall/gjson@v1.18.0
+  github.com/tidwall/match@v1.2.0
+  github.com/tidwall/pretty@v1.2.1
+  github.com/weppos/publicsuffix-go@v0.40.3-0.20250408071509-6074bbe7fd39
+  go.uber.org/atomic@v1.11.0
+  go.uber.org/multierr@v1.11.0
+  golang.org/x/crypto@v0.57.0
+  golang.org/x/exp@v0.0.0-20250106191152-7588d65b2ba8
+  golang.org/x/net@v0.60.0
+  golang.org/x/sys@v0.48.0
+  golang.org/x/text@v0.42.0
+  gopkg.in/yaml.v3@v3.0.1
+  modernc.org/libc@v1.72.3
+  modernc.org/mathutil@v1.7.1
+  modernc.org/memory@v1.11.0
+  modernc.org/sqlite@v1.52.0
+
+=== Symbol Results ===
+
+No vulnerabilities found.
+
+=== Package Results ===
+
+No other vulnerabilities found.
+
+=== Module Results ===
+
+Vulnerability #1: GO-2026-5932
+    The golang.org/x/crypto/openpgp package is unmaintained, unsafe by design,
+    and has known security issues
+  More info: https://pkg.go.dev/vuln/GO-2026-5932
+  Module: golang.org/x/crypto
+    Found in: golang.org/x/crypto@v0.57.0
+    Fixed in: N/A
+
+Your code is affected by 0 vulnerabilities.
+This scan also found 0 vulnerabilities in packages you import and 1
+vulnerability in modules you require, but your code doesn't appear to call these
+vulnerabilities.
+
+--- deadcode-last.log ---
+
+--- fifo-repeat.log ---
+ok  	github.com/Autumn-27/artex/server	7.759s
+
+--- last-regressions.log ---
+ok  	github.com/Autumn-27/artex/evidence	3.122s
+ok  	github.com/Autumn-27/artex/db	17.308s
+
+--- workspace-final.log ---
+=== RUN   TestWorkspaceProtectsInternalStores
+--- PASS: TestWorkspaceProtectsInternalStores (0.03s)
+=== RUN   TestWorkspaceLinksCannotEscape
+--- PASS: TestWorkspaceLinksCannotEscape (0.03s)
+=== RUN   TestWorkspaceRejectsCustomBusinessDatabase
+2026/10/20 01:09:29 [sqlite] 数据库配置来源: 环境变量 ARTEX_DB_PATH
+--- PASS: TestWorkspaceRejectsCustomBusinessDatabase (0.22s)
+PASS
+ok  	github.com/Autumn-27/artex/server	6.370s
+
+--- typecheck-last.log ---
+npm notice run artex-web@2.2.0 typecheck
+npm notice run tsc --noEmit --incremental false
+
+--- frontend-test-final.log ---
+npm notice run artex-web@2.2.0 test
+npm notice run node --experimental-strip-types --test tests/*.test.ts
+(node:26144) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///D:/Projects/ARTEX/web/tests/llm-record-deletion.test.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\D:\Projects\ARTEX\web\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ 409 restore protection (1.5751ms)
+✔ 500 database error (0.1491ms)
+✔ network failure (0.1257ms)
+✔ successful deletion clears selection and refreshes once (0.1762ms)
+ℹ tests 4
+ℹ suites 0
+ℹ pass 4
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 134.6081
+
+--- lint-last.log ---
+npm notice run artex-web@2.2.0 lint
+npm notice run node scripts/lint.mjs
+Lint gate passed: 57 documented existing errors, 119 warnings. No new errors.
+
+--- frontend-build.log ---
+npm notice run artex-web@2.2.0 build:static
+npm notice run node scripts/build-static.mjs
+▲ Next.js 16.4.2 (Turbopack)
+✓ Running next.config.mjs took 13ms
+
+  Creating an optimized production build ...
+✓ Compiled successfully in 14.3s
+  Running TypeScript ...
+  Finished TypeScript in 8.2s ...
+  Collecting page data using 11 workers ...
+  Generating static pages using 11 workers (0/30) ...
+  Generating static pages using 11 workers (7/30) 
+  Generating static pages using 11 workers (14/30) 
+  Generating static pages using 11 workers (22/30) 
+✓ Generating static pages using 11 workers (30/30) in 394ms
+  Finalizing page optimization ...
+⚠ Statically exporting a Next.js application via `next export` disables API routes and middleware.
+This command is meant for static-only hosts, and is not necessary to make your application static.
+Pages in your application without server-side data dependencies will be automatically statically exported by `next build`, including pages powered by `getStaticProps`.
+Learn more: https://nextjs.org/docs/messages/api-routes-static-export
+
+Route (app)
+┌ ○ /
+├ ○ /_not-found
+├ ○ /chat
+├ ○ /dashboard
+├ ○ /function/assets
+├ ○ /function/commands
+├ ○ /function/findings
+├ ○ /function/findings/detail
+├ ○ /function/llm-records
+├ ○ /function/sync
+├ ○ /function/tasks
+├ ○ /function/tasks/detail
+├ ○ /function/traffic
+├ ○ /function/workspace
+├ ○ /icon.png
+├ ○ /login
+├ ○ /setup
+├ ○ /system/agents
+├ ○ /system/agents/detail
+├ ○ /system/intercept
+├ ○ /system/intercept/approvals
+├ ○ /system/llm
+├ ○ /system/logs
+├ ○ /system/mcp
+├ ○ /system/notify
+├ ○ /system/settings
+├ ○ /system/skills
+└ ○ /system/tools
+
+
+ƒ Proxy (Middleware)
+
+○  (Static)  prerendered as static content
+
+
+--- npm-last.json ---
+{
+  "auditReportVersion": 2,
+  "vulnerabilities": {},
+  "metadata": {
+    "vulnerabilities": {
+      "info": 0,
+      "low": 0,
+      "moderate": 0,
+      "high": 0,
+      "critical": 0,
+      "total": 0
+    },
+    "dependencies": {
+      "prod": 335,
+      "dev": 97,
+      "optional": 69,
+      "peer": 1,
+      "peerOptional": 0,
+      "total": 470
+    }
+  }
+}
+
+--- reachable-last.json ---
+{
+  "unreachable": [],
+  "packages": [
+    "@antv/g6",
+    "@base-ui/react",
+    "@dnd-kit/core",
+    "@xyflow/react",
+    "class-variance-authority",
+    "clsx",
+    "cmdk",
+    "geist",
+    "lucide-react",
+    "next",
+    "next-themes",
+    "node:child_process",
+    "node:fs",
+    "node:path",
+    "radix-ui",
+    "react",
+    "react-markdown",
+    "react-resizable-panels",
+    "recharts",
+    "remark-gfm",
+    "sonner",
+    "tailwind-merge",
+    "vaul",
+    "zustand"
+  ]
+}
+
+Five embedui cross-builds passed: windows/amd64 linux/amd64 linux/arm64 darwin/amd64 darwin/arm64. Workflow rules tests: 7 passed. YAML parse: 2 passed. Shell syntax and shared version resolver passed.
+Final rebuilt Windows binary smoke passed: fresh SQLite, injected version 1.0.1, health HTTP 200, embedded login HTTP 200.

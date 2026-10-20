@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { toast } from "sonner";
-import { EyeIcon, GitCompareIcon, InfoIcon, PencilIcon, RotateCcwIcon, SaveIcon, Trash2Icon, XIcon } from "lucide-react";
+import { EyeIcon, GitCompareIcon, PencilIcon, RotateCcwIcon, SaveIcon, Trash2Icon, XIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -70,10 +70,10 @@ export function AgentEditor({ agentKey, onSaved }: { agentKey: string; onSaved?:
   const [settings, setSettings] = React.useState<Settings | null>(null);
 
   React.useEffect(() => {
-    api.mcpServers().then(setMcp).catch(() => {});
-    api.skills().then(setSkills).catch(() => {});
-    api.tools().then(setTools).catch(() => {});
-    api.settings().then(setSettings).catch(() => {});
+    api.mcpServers().then(setMcp).catch((err: unknown) => toast.error(err instanceof Error ? err.message : "加载失败，请重试"));
+    api.skills().then(setSkills).catch((err: unknown) => toast.error(err instanceof Error ? err.message : "加载失败，请重试"));
+    api.tools().then(setTools).catch((err: unknown) => toast.error(err instanceof Error ? err.message : "加载失败，请重试"));
+    api.settings().then(setSettings).catch((err: unknown) => toast.error(err instanceof Error ? err.message : "加载失败，请重试"));
   }, []);
   // global gates: traffic tools need 流量捕获, web search needs the master switch.
   const captureOn = !!settings?.traffic_capture;
@@ -247,7 +247,7 @@ export function AgentEditor({ agentKey, onSaved }: { agentKey: string; onSaved?:
     } catch (e) {
       toast.error("保存工具绑定失败：" + (e as Error).message);
       reload();
-      api.tools().then(setTools).catch(() => {});
+      api.tools().then(setTools).catch((err: unknown) => toast.error(err instanceof Error ? err.message : "加载失败，请重试"));
     }
   }
 

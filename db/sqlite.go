@@ -1,6 +1,7 @@
 package db
 
 import (
+	"container/list"
 	"context"
 	"database/sql"
 	"database/sql/driver"
@@ -12,6 +13,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"modernc.org/sqlite"
@@ -360,7 +362,7 @@ func sqliteLike(a []driver.Value) (driver.Value, error) {
 	if a[0] == nil || a[1] == nil {
 		return nil, nil
 	}
-	pattern := []rune(fmt.Sprint(a[0]))
+	patternText := fmt.Sprint(a[0])
 	escape := rune(0)
 	if len(a) == 3 {
 		if a[2] == nil {
@@ -372,13 +374,71 @@ func sqliteLike(a []driver.Value) (driver.Value, error) {
 		}
 		escape = r[0]
 	}
+	r, err := cachedLike(patternText, escape)
+	if err != nil {
+		return nil, err
+	}
+	if r == nil {
+		return false, nil
+	} // trailing escape never matches
+	return r.MatchString(fmt.Sprint(a[1])), nil
+}
+
+type likeKey struct {
+	pattern string
+	escape  rune
+}
+type likeEntry struct {
+	key likeKey
+	re  *regexp.Regexp
+}
+
+const likeCacheLimit = 256
+
+var likeCache = struct {
+	sync.Mutex
+	entries map[likeKey]*list.Element
+	order   *list.List
+}{entries: make(map[likeKey]*list.Element), order: list.New()}
+
+func cachedLike(patternText string, escape rune) (*regexp.Regexp, error) {
+	key := likeKey{patternText, escape}
+	likeCache.Lock()
+	if e := likeCache.entries[key]; e != nil {
+		likeCache.order.MoveToFront(e)
+		r := e.Value.(likeEntry).re
+		likeCache.Unlock()
+		return r, nil
+	}
+	likeCache.Unlock()
+	r, err := compileLike(patternText, escape)
+	// Bound both entry count and retained pattern size. Large patterns still work.
+	if err != nil || len(patternText) > 4096 {
+		return r, err
+	}
+	likeCache.Lock()
+	defer likeCache.Unlock()
+	if e := likeCache.entries[key]; e != nil {
+		return e.Value.(likeEntry).re, nil
+	}
+	likeCache.entries[key] = likeCache.order.PushFront(likeEntry{key, r})
+	if likeCache.order.Len() > likeCacheLimit {
+		e := likeCache.order.Back()
+		delete(likeCache.entries, e.Value.(likeEntry).key)
+		likeCache.order.Remove(e)
+	}
+	return r, nil
+}
+
+func compileLike(patternText string, escape rune) (*regexp.Regexp, error) {
+	pattern := []rune(patternText)
 	var b strings.Builder
 	b.WriteString("(?is)^")
 	for i := 0; i < len(pattern); i++ {
 		r := pattern[i]
 		if escape != 0 && r == escape {
 			if i+1 == len(pattern) {
-				return false, nil
+				return nil, nil
 			}
 			i++
 			b.WriteString(regexp.QuoteMeta(string(pattern[i])))
@@ -394,11 +454,7 @@ func sqliteLike(a []driver.Value) (driver.Value, error) {
 		}
 	}
 	b.WriteByte('$')
-	r, e := regexp.Compile(b.String())
-	if e != nil {
-		return nil, e
-	}
-	return r.MatchString(fmt.Sprint(a[1])), nil
+	return regexp.Compile(b.String())
 }
 
 func IsUniqueViolation(err error) bool {

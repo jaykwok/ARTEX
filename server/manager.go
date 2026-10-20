@@ -366,6 +366,10 @@ func NewManager(dir, proxyAddr string) (*Manager, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := validateWorkspaceDatabase(pg, dir); err != nil {
+		pg.Close()
+		return nil, err
+	}
 	if err := pg.RecoverFindingRetests(); err != nil {
 		pg.Close()
 		return nil, fmt.Errorf("recover finding retests: %w", err)
@@ -804,6 +808,7 @@ func (m *Manager) SetGlobalProxy(raw string) error {
 }
 
 func (m *Manager) Close() error {
+	m.enrich.Close()
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.traffic != nil {

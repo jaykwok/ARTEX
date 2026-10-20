@@ -41,7 +41,7 @@ func TestFindingGroupsReturnsTaskBucketsAndNormalizesPagination(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SQLite unavailable (%v)", err)
 	}
-	defer m.Close()
+	t.Cleanup(func() { m.Close() })
 	marker := fmt.Sprintf("__server_finding_groups_%d__", time.Now().UnixNano())
 	createdTaskIDs := []int64{}
 	defer func() {
@@ -151,7 +151,7 @@ func TestDeepenFindingCreatesAuditedIntentAndRevivesTask(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SQLite unavailable (%v)", err)
 	}
-	defer m.Close()
+	t.Cleanup(func() { m.Close() })
 
 	task, err := m.CreateTask("deepen finding", "goal", nil, 0, 0)
 	if err != nil {
@@ -280,7 +280,7 @@ func TestDeepenAdmissionFailureDiscardsFollowUpIntent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SQLite unavailable (%v)", err)
 	}
-	defer m.Close()
+	t.Cleanup(func() { m.Close() })
 	task, err := m.CreateTask("deepen rollback", "leave no orphan intent", nil, 0, 0)
 	if err != nil {
 		t.Fatal(err)

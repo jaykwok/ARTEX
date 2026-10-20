@@ -38,7 +38,7 @@ func TestCreateCompanyRejectsNormalizedDuplicateWithoutChangingScope(t *testing.
 	if err != nil {
 		t.Fatalf("SQLite unavailable (%v)", err)
 	}
-	defer m.Close()
+	t.Cleanup(func() { m.Close() })
 
 	stamp := time.Now().UnixNano()
 	name := fmt.Sprintf("HTTP Strict Company %d", stamp)
@@ -78,7 +78,7 @@ func TestDeleteCompanyRefreshesLiveTaskCompanyIDs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SQLite unavailable (%v)", err)
 	}
-	defer m.Close()
+	t.Cleanup(func() { m.Close() })
 
 	companyID, _, err := m.pg.Companies().UpsertCompany(
 		fmt.Sprintf("Delete Company DTO %d", time.Now().UnixNano()), "",
@@ -119,7 +119,7 @@ func TestCompanyScopeHTTPErrorClassificationAndBounds(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SQLite unavailable (%v)", err)
 	}
-	defer m.Close()
+	t.Cleanup(func() { m.Close() })
 	s := &Server{m: m}
 
 	t.Run("missing company is 404", func(t *testing.T) {
@@ -193,7 +193,7 @@ func TestListAssetsClassifiesValidationAndDatabaseErrors(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SQLite unavailable (%v)", err)
 	}
-	defer m.Close()
+	t.Cleanup(func() { m.Close() })
 	s := &Server{m: m}
 
 	req := httptest.NewRequest(http.MethodGet, "/api/assets?dsl=(", nil)
@@ -219,7 +219,7 @@ func TestDeleteCompanyRejectsBadJSONAndReportsMissing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SQLite unavailable (%v)", err)
 	}
-	defer m.Close()
+	t.Cleanup(func() { m.Close() })
 	s := &Server{m: m}
 
 	companyID, _, err := m.pg.Companies().UpsertCompany(
@@ -258,7 +258,7 @@ func TestCompanyScopeSystemFailureIsHTTP500(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SQLite unavailable (%v)", err)
 	}
-	defer m.Close()
+	t.Cleanup(func() { m.Close() })
 	s := &Server{m: m}
 	if err := m.pg.Close(); err != nil {
 		t.Fatal(err)

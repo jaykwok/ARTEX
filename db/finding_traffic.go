@@ -517,3 +517,9 @@ func (d *DB) SetFindingReportVersionByNodeID(ctx context.Context, nodeID int64, 
 	})
 	return
 }
+
+// WithEvidenceMetadataTx commits metadata work before filesystem GC.
+// The caller must already hold WithEvidenceLock to protect the resulting refs.
+func (d *DB) WithEvidenceMetadataTx(ctx context.Context, fn func(*sql.Tx) error) error {
+	return d.evidenceTransaction(ctx, nil, fn)
+}

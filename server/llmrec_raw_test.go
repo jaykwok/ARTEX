@@ -23,7 +23,7 @@ func TestRecorderPersistsRawWireBodies(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SQLite unavailable (%v)", err)
 	}
-	defer m.Close()
+	t.Cleanup(func() { m.Close() })
 	pg := m.PG()
 	if err := pg.EnsureLLMRecordsTable(); err != nil {
 		t.Fatalf("ensure table: %v", err)
@@ -67,7 +67,7 @@ func TestRecorderPersistsRawWireBodies(t *testing.T) {
 	rec := llmrec.Wrap(inner, pg, cfg.Model, "raw-test-profile", "", "", func() bool { return true })
 
 	// Clean up whatever this test writes, whether or not it passes. Must be a
-	// defer registered after `defer m.Close()` (LIFO puts it first) — a
+	// defer registered after `t.Cleanup(func() { m.Close() })` (LIFO puts it first) — a
 	// t.Cleanup would run after the manager already closed the pool.
 	defer func() {
 		if _, err := pg.Exec(`DELETE FROM llm_records WHERE session_id = $1`, session); err != nil {

@@ -8,7 +8,7 @@
 #   ARTEX_TARGET_OS=linux             One target OS in single-target mode.
 #   ARTEX_TARGET_ARCH=amd64           One target arch in single-target mode.
 #   ARTEX_TARGETS=linux/amd64,...     Comma-separated targets for multi-target mode.
-#   ARTEX_BUILD_VERSION=v0.3.3        Version embedded in the binary and archive name.
+#   ARTEX_BUILD_VERSION=v1.0.1        Version embedded in the binary and archive name.
 #   ARTEX_OUTPUT=/path/to/artex       Explicit binary path in single-target mode.
 #   ARTEX_OUTPUT_DIR=dist             Directory for default binary paths.
 #   ARTEX_PACKAGE=1                   Create a zip archive for each target.
@@ -87,18 +87,10 @@ while [ "$#" -gt 0 ]; do
   esac
 done
 
-command -v go >/dev/null 2>&1 || die "未检测到 Go（项目需要 Go 1.26 或更高版本）"
+command -v go >/dev/null 2>&1 || die "未检测到 Go（项目需要 Go 1.27.2 或更高版本）"
 
 ARTEX_GOSUMDB="${ARTEX_GOSUMDB:-sum.golang.org}"
-if [ -z "${ARTEX_BUILD_VERSION:-}" ]; then
-  if command -v git >/dev/null 2>&1 && git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-    ARTEX_BUILD_VERSION="$(git describe --tags --always --dirty)"
-  else
-    ARTEX_BUILD_VERSION="dev"
-  fi
-fi
-# Release tags are commonly passed as v0.3.3; keep the binary version consistent.
-ARTEX_BUILD_VERSION="${ARTEX_BUILD_VERSION#v}"
+. ./scripts/version.sh
 ARTEX_OUTPUT_DIR="${ARTEX_OUTPUT_DIR:-dist}"
 ARTEX_PACKAGE_DIR="${ARTEX_PACKAGE_DIR:-$ARTEX_OUTPUT_DIR}"
 ARTEX_UPX_ARGS="${ARTEX_UPX_ARGS:---best --lzma}"

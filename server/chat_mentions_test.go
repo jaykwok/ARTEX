@@ -121,7 +121,7 @@ func TestChatMentionWorkerReceivesServerDetails(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SQLite unavailable (%v)", err)
 	}
-	defer m.Close()
+	t.Cleanup(func() { m.Close() })
 	ctx, cancel := context.WithCancel(context.Background())
 	s := &Server{ctx: ctx, m: m, engine: NewEngine(m)}
 	task, err := m.CreateTask("Worker mention test", "Read referenced records", nil, 0, 0)

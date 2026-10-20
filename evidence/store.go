@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Autumn-27/artex/db"
@@ -65,11 +66,22 @@ func (s *Store) writeBody(r io.Reader, expectedLength int64, expectedHash string
 	if err = os.MkdirAll(stage, 0o700); err != nil {
 		return
 	}
+	restorePins.Lock()
 	f, err := os.CreateTemp(stage, "body-")
+	if err == nil {
+		restorePins.stages[f.Name()] = true
+	}
+	restorePins.Unlock()
 	if err != nil {
 		return "", err
 	}
-	defer func() { f.Close(); os.Remove(f.Name()) }()
+	defer func() {
+		f.Close()
+		restorePins.Lock()
+		delete(restorePins.stages, f.Name())
+		_ = os.Remove(f.Name())
+		restorePins.Unlock()
+	}()
 	h := sha256.New()
 	n, err := io.Copy(io.MultiWriter(f, h), r)
 	if err != nil {
@@ -106,6 +118,10 @@ func (s *Store) writeBody(r io.Reader, expectedLength int64, expectedHash string
 		return "", err
 	}
 	if err = os.Rename(f.Name(), path); err != nil {
+		// A concurrent restore/record may have installed the same immutable body.
+		if verifyFile(path, hash, n) == nil {
+			return hash, nil
+		}
 		return "", err
 	}
 	// Windows does not expose directory fsync through os.File.Sync. The body
@@ -313,64 +329,122 @@ func (s *Store) InstallSnapshots(ctx context.Context, snapshots []db.TrafficEvid
 	return s.WithInstalledSnapshots(ctx, snapshots, source, func() error { return nil })
 }
 
-// WithInstalledSnapshots pins installed bodies until the metadata restore finishes.
-// The callback must not acquire another evidence advisory lock.
-func (s *Store) WithInstalledSnapshots(ctx context.Context, snapshots []db.TrafficEvidenceSnapshot, source string, restore func() error) error {
-	return s.DB.WithEvidenceLock(ctx, func() error {
+// Pins protect bodies throughout restore without holding the global evidence lock.
+// Install/GC still coordinate with ordinary evidence writes under that lock.
+var restorePins = struct {
+	sync.Mutex
+	dirs   map[string]map[string]int
+	stages map[string]bool
+}{dirs: make(map[string]map[string]int), stages: make(map[string]bool)}
+
+func (s *Store) pinSnapshots(snapshots []db.TrafficEvidenceSnapshot) func() {
+	dir, _ := filepath.Abs(s.Dir)
+	restorePins.Lock()
+	if restorePins.dirs[dir] == nil {
+		restorePins.dirs[dir] = map[string]int{}
+	}
+	for _, v := range snapshots {
+		for _, hash := range []string{v.ReqHash, v.RespHash} {
+			restorePins.dirs[dir][hash]++
+		}
+	}
+	restorePins.Unlock()
+	return func() {
+		restorePins.Lock()
+		defer restorePins.Unlock()
 		for _, v := range snapshots {
-			if v.ID != db.TrafficSnapshotID(v) {
-				return errors.New("归档证据快照元数据哈希不匹配")
-			}
-			for _, body := range []struct {
-				hash   string
-				length int64
-			}{{v.ReqHash, v.ReqLen}, {v.RespHash, v.RespLen}} {
-				if err := func() error {
-					path, err := hashPath(source, body.hash)
-					if err != nil {
-						return err
-					}
-					f, err := os.Open(path)
-					if err != nil {
-						return err
-					}
-					defer f.Close()
-					_, err = s.writeBody(f, body.length, body.hash)
-					return err
-				}(); err != nil {
-					return err
+			for _, hash := range []string{v.ReqHash, v.RespHash} {
+				restorePins.dirs[dir][hash]--
+				if restorePins.dirs[dir][hash] == 0 {
+					delete(restorePins.dirs[dir], hash)
 				}
 			}
 		}
-		return restore()
-	})
+		if len(restorePins.dirs[dir]) == 0 {
+			delete(restorePins.dirs, dir)
+		}
+	}
+}
+
+func (s *Store) WithInstalledSnapshots(ctx context.Context, snapshots []db.TrafficEvidenceSnapshot, source string, restore func() error) error {
+	var unpin func()
+	// Register before GC takes its reference snapshot. Only this short operation
+	// holds the global lock; hashing/copying bodies and the restore callback do not.
+	if err := s.DB.WithEvidenceLock(ctx, func() error {
+		unpin = s.pinSnapshots(snapshots)
+		return nil
+	}); err != nil {
+		return err
+	}
+	defer unpin()
+	for _, v := range snapshots {
+		if v.ID != db.TrafficSnapshotID(v) {
+			return errors.New("归档证据快照元数据哈希不匹配")
+		}
+		for _, body := range []struct {
+			hash   string
+			length int64
+		}{{v.ReqHash, v.ReqLen}, {v.RespHash, v.RespLen}} {
+			if err := func() error {
+				path, err := hashPath(source, body.hash)
+				if err != nil {
+					return err
+				}
+				f, err := os.Open(path)
+				if err != nil {
+					return err
+				}
+				defer f.Close()
+				_, err = s.writeBody(f, body.length, body.hash)
+				return err
+			}(); err != nil {
+				return err
+			}
+		}
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return restore()
 }
 
 func (s *Store) Collect(ctx context.Context, now time.Time) error {
-	return s.DB.WithEvidenceTx(ctx, func(tx *sql.Tx) error {
-		if _, err := tx.Exec(`UPDATE traffic_evidence_snapshots AS s SET unreferenced_at=$1
-WHERE unreferenced_at IS NULL AND NOT EXISTS(SELECT 1 FROM finding_traffic_bindings b WHERE b.snapshot_id=s.id)`, now); err != nil {
-			return err
-		}
-		if _, err := tx.Exec(`DELETE FROM traffic_evidence_snapshots AS s WHERE unreferenced_at<$1
-AND NOT EXISTS(SELECT 1 FROM finding_traffic_bindings b WHERE b.snapshot_id=s.id)`, now.Add(-24*time.Hour)); err != nil {
-			return err
-		}
-		rows, err := tx.Query(`SELECT req_hash FROM traffic_evidence_snapshots UNION SELECT resp_hash FROM traffic_evidence_snapshots`)
-		if err != nil {
-			return err
-		}
+	return s.DB.WithEvidenceLock(ctx, func() error {
 		refs := map[string]bool{}
-		for rows.Next() {
-			var hash string
-			if err := rows.Scan(&hash); err != nil {
-				rows.Close()
-				return err
-			}
+		dir, _ := filepath.Abs(s.Dir)
+		restorePins.Lock()
+		for hash := range restorePins.dirs[dir] {
 			refs[hash] = true
 		}
-		err = rows.Err()
-		rows.Close()
+		restorePins.Unlock()
+		err := s.DB.WithEvidenceMetadataTx(ctx, func(tx *sql.Tx) error {
+			if _, err := tx.Exec(`UPDATE traffic_evidence_snapshots AS s SET unreferenced_at=$1
+WHERE unreferenced_at IS NULL AND NOT EXISTS(SELECT 1 FROM finding_traffic_bindings b WHERE b.snapshot_id=s.id)`, now); err != nil {
+				return err
+			}
+			if _, err := tx.Exec(`DELETE FROM traffic_evidence_snapshots AS s WHERE unreferenced_at<$1
+AND NOT EXISTS(SELECT 1 FROM finding_traffic_bindings b WHERE b.snapshot_id=s.id)`, now.Add(-24*time.Hour)); err != nil {
+				return err
+			}
+			rows, err := tx.Query(`SELECT req_hash FROM traffic_evidence_snapshots UNION SELECT resp_hash FROM traffic_evidence_snapshots`)
+			if err != nil {
+				return err
+			}
+			for rows.Next() {
+				var hash string
+				if err := rows.Scan(&hash); err != nil {
+					rows.Close()
+					return err
+				}
+				refs[hash] = true
+			}
+			err = rows.Err()
+			rows.Close()
+			if err != nil {
+				return err
+			}
+			return nil
+		})
 		if err != nil {
 			return err
 		}
@@ -389,13 +463,25 @@ AND NOT EXISTS(SELECT 1 FROM finding_traffic_bindings b WHERE b.snapshot_id=s.id
 					return nil
 				}
 				info, err := entry.Info()
+				if os.IsNotExist(err) {
+					return nil
+				}
 				if err != nil {
 					return err
 				}
 				if now.Sub(info.ModTime()) < 24*time.Hour {
 					return nil
 				}
-				return os.Remove(path)
+				restorePins.Lock()
+				defer restorePins.Unlock()
+				if restorePins.stages[path] {
+					return nil
+				}
+				err = os.Remove(path)
+				if os.IsNotExist(err) {
+					return nil
+				}
+				return err
 			})
 			if err != nil {
 				return err

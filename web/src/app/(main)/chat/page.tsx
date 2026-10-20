@@ -75,16 +75,6 @@ function fmtTokens(n: number): string {
   return String(n);
 }
 
-// fmtDuration renders an elapsed milliseconds span compactly (90s → 1m30s).
-function fmtDuration(ms: number): string {
-  const s = Math.floor(ms / 1000);
-  if (s < 60) return `${s}s`;
-  const m = Math.floor(s / 60);
-  if (m < 60) return `${m}m${String(s % 60).padStart(2, "0")}s`;
-  const h = Math.floor(m / 60);
-  return `${h}h${String(m % 60).padStart(2, "0")}m`;
-}
-
 // HISTORY_PAGE is how many steps one history page loads: the latest page on open,
 // then one more page each time the user scrolls to the top. Kept modest so a long
 // thread stays snappy (only ~a page of rows is in the DOM until you scroll up).

@@ -47,7 +47,7 @@ func TestAdmitAlreadyRunningTaskDoesNotQueueAfterLimitDecrease(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SQLite unavailable (%v)", err)
 	}
-	defer m.Close()
+	t.Cleanup(func() { m.Close() })
 
 	oldEnabled, oldLimit := m.ConcurrencyLimit()
 	if oldLimit < 1 {
@@ -89,7 +89,7 @@ func TestAdmissionDoesNotOverwriteConcurrentTerminalStatus(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SQLite unavailable (%v)", err)
 	}
-	defer m.Close()
+	t.Cleanup(func() { m.Close() })
 	defer restoreConcurrencySetting(t, m)()
 	if err := m.SetConcurrency(false, defaultConcurrencyLimit); err != nil {
 		t.Fatal(err)
@@ -126,7 +126,7 @@ func TestAdmitKeepsQueuedBootstrapMode(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SQLite unavailable (%v)", err)
 	}
-	defer m.Close()
+	t.Cleanup(func() { m.Close() })
 
 	oldEnabled, oldLimit := m.ConcurrencyLimit()
 	if oldLimit < 1 {
@@ -169,7 +169,7 @@ func TestTerminalTaskQueuedByAdmissionKeepsExecutionBarrier(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SQLite unavailable (%v)", err)
 	}
-	defer m.Close()
+	t.Cleanup(func() { m.Close() })
 	defer restoreConcurrencySetting(t, m)()
 	if err := m.SetConcurrency(true, 1); err != nil {
 		t.Fatal(err)
@@ -217,7 +217,7 @@ func TestTimedOutTaskRevivalResetsClockAndSettlingAcrossFIFO(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SQLite unavailable (%v)", err)
 	}
-	defer m.Close()
+	t.Cleanup(func() { m.Close() })
 	defer restoreConcurrencySetting(t, m)()
 	if err := m.SetConcurrency(true, 1); err != nil {
 		t.Fatal(err)
@@ -303,7 +303,7 @@ func TestQueuedTaskCanPauseAndResumeAtFIFOTail(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SQLite unavailable (%v)", err)
 	}
-	defer m.Close()
+	t.Cleanup(func() { m.Close() })
 	defer restoreConcurrencySetting(t, m)()
 	if err := m.SetConcurrency(true, 1); err != nil {
 		t.Fatal(err)
@@ -353,7 +353,7 @@ func TestReadyFIFOIsAdmittedBeforeNewTask(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SQLite unavailable (%v)", err)
 	}
-	defer m.Close()
+	t.Cleanup(func() { m.Close() })
 	defer restoreConcurrencySetting(t, m)()
 	if err := m.SetConcurrency(true, 2); err != nil {
 		t.Fatal(err)
@@ -386,7 +386,12 @@ func TestReadyFIFOIsAdmittedBeforeNewTask(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !queued || !incoming.Queued || incoming.QueuedAt <= older.QueuedAt {
+	// Windows can return equal timestamps for adjacent commits. Production FIFO
+	// breaks those ties by monotonic task ID; assert that ordering, then promotion.
+	olderID, _ := strconv.ParseInt(older.ID, 10, 64)
+	incomingID, _ := strconv.ParseInt(incoming.ID, 10, 64)
+	if !queued || !incoming.Queued || incoming.QueuedAt < older.QueuedAt ||
+		(incoming.QueuedAt == older.QueuedAt && incomingID <= olderID) {
 		t.Fatalf("new task bypassed ready FIFO: queued=%v older=%+v incoming=%+v", queued, older, incoming)
 	}
 	s.reconcileConcurrency()
@@ -400,7 +405,7 @@ func TestUnavailableTaskReleasesSlotForReadyQueue(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SQLite unavailable (%v)", err)
 	}
-	defer m.Close()
+	t.Cleanup(func() { m.Close() })
 	defer restoreConcurrencySetting(t, m)()
 	if err := m.SetConcurrency(true, 1); err != nil {
 		t.Fatal(err)
@@ -439,7 +444,7 @@ func TestUnavailableTaskWaitsForActiveLLMCallBeforeParking(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SQLite unavailable (%v)", err)
 	}
-	defer m.Close()
+	t.Cleanup(func() { m.Close() })
 	defer restoreConcurrencySetting(t, m)()
 	if err := m.SetConcurrency(true, 1); err != nil {
 		t.Fatal(err)
@@ -493,7 +498,7 @@ func TestRerunAdmissionFailureRestoresIntentState(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SQLite unavailable (%v)", err)
 	}
-	defer m.Close()
+	t.Cleanup(func() { m.Close() })
 	task, err := m.CreateTask("failed rerun admission", "restore intent", nil, 0, 0)
 	if err != nil {
 		t.Fatal(err)
@@ -537,7 +542,7 @@ func TestTaskLLMResolutionRejectsInvalidExplicitProfile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SQLite unavailable (%v)", err)
 	}
-	defer m.Close()
+	t.Cleanup(func() { m.Close() })
 
 	profileID, err := m.pg.SaveProfile(&db.LLMProfile{
 		Name:   fmt.Sprintf("invalid-resolution-%d", time.Now().UnixNano()),
@@ -578,7 +583,7 @@ func TestTaskLLMResolutionPrefersAgentBindingOverTaskChain(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SQLite unavailable (%v)", err)
 	}
-	defer m.Close()
+	t.Cleanup(func() { m.Close() })
 
 	stamp := time.Now().UnixNano()
 	boundID, err := m.pg.SaveProfile(&db.LLMProfile{
@@ -645,7 +650,7 @@ func TestTaskLLMResolutionReportsDatabaseFailure(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SQLite unavailable (%v)", err)
 	}
-	defer m.Close()
+	t.Cleanup(func() { m.Close() })
 	task, err := m.CreateTask("resolution storage failure", "return server error", nil, 0, 0)
 	if err != nil {
 		t.Fatal(err)
@@ -690,7 +695,7 @@ func TestBatchControlLimitCountsDeduplicatedIDs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SQLite unavailable (%v)", err)
 	}
-	defer m.Close()
+	t.Cleanup(func() { m.Close() })
 	s := newAdmissionTestServer(m, nil)
 
 	request := func(handler http.HandlerFunc, path string, pathValues map[string]string, payload any) *httptest.ResponseRecorder {
@@ -764,7 +769,7 @@ func TestPauseTaskToolPersistsAndDequeuesTask(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SQLite unavailable (%v)", err)
 	}
-	defer m.Close()
+	t.Cleanup(func() { m.Close() })
 	task, err := m.CreateTask("orchestrated pause", "persist queued pause", nil, 0, 0)
 	if err != nil {
 		t.Fatal(err)
@@ -800,7 +805,7 @@ func TestPauseTaskToolUsesOrchestratorCancellationCause(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SQLite unavailable (%v)", err)
 	}
-	defer m.Close()
+	t.Cleanup(func() { m.Close() })
 	task, err := m.CreateTask("orchestrated pause cause", "keep audit reason", nil, 0, 0)
 	if err != nil {
 		t.Fatal(err)

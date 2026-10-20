@@ -17,15 +17,15 @@ func TestTaskMetadataPatchReturnsRenameAndPin(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SQLite unavailable (%v)", err)
 	}
-	defer m.Close()
+	t.Cleanup(func() { m.Close() })
 	task, err := m.CreateTask("metadata patch", "goal", nil, 0, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
 	taskID, _ := strconv.ParseInt(task.ID, 10, 64)
 	defer func() { _ = m.pg.DeleteTask(taskID) }()
-	s := New(context.Background(), m, t.TempDir(), t.TempDir(), t.TempDir())
-	token, err := signJWT(s.jwtKey)
+	s := newTestServer(t, context.Background(), m, t.TempDir(), t.TempDir(), t.TempDir())
+	token, err := signTestJWT(t, s)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -65,8 +65,8 @@ func TestConversationBatchDeleteReportsMissing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SQLite unavailable (%v)", err)
 	}
-	defer m.Close()
-	s := New(context.Background(), m, t.TempDir(), t.TempDir(), t.TempDir())
+	t.Cleanup(func() { m.Close() })
+	s := newTestServer(t, context.Background(), m, t.TempDir(), t.TempDir(), t.TempDir())
 	first, err := m.pg.CreateConversation("mainagent", "batch-http-first", nil)
 	if err != nil {
 		t.Fatal(err)
@@ -80,7 +80,7 @@ func TestConversationBatchDeleteReportsMissing(t *testing.T) {
 		_ = m.pg.DeleteConversation(first.ID)
 		_ = m.pg.DeleteConversation(second.ID)
 	}()
-	token, err := signJWT(s.jwtKey)
+	token, err := signTestJWT(t, s)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -116,9 +116,10 @@ type Server struct {
 
 	// Cold task archives run through one persistent FIFO worker. The buffered wake
 	// channel coalesces enqueue bursts; the database remains the source of truth.
-	archiveWake chan struct{}
-	archiveWG   sync.WaitGroup
-	side        *sideQuestionState
+	archiveWake  chan struct{}
+	archiveWG    sync.WaitGroup
+	backgroundWG sync.WaitGroup
+	side         *sideQuestionState
 }
 
 // provEntry is a cached provider + its config for one LLM profile id.
@@ -225,15 +226,15 @@ func New(ctx context.Context, m *Manager, skillDir string, dataDir string, keyDi
 		if err := s.seedFindingRetester(); err != nil {
 			log.Printf("[retester] seed: %v", err)
 		}
-		go s.evidenceStore().RunGC(s.ctx)
-		s.seedPythonInterpreter()     // 自定义脚本工具:开机检测 python 解释器入库(仅空时)
-		go newScheduler(s).Run(s.ctx) // P3 触发器调度(定时/finding/目标事件),仅自定义 agent
+		s.startBackground(func() { s.evidenceStore().RunGC(s.ctx) })
+		s.seedPythonInterpreter()                                // 自定义脚本工具:开机检测 python 解释器入库(仅空时)
+		s.startBackground(func() { newScheduler(s).Run(s.ctx) }) // P3 触发器调度(定时/finding/目标事件),仅自定义 agent
 		// 漏洞 IM 推送投递引擎。与 Scheduler 并列但独立：推送的实时性要求(3s)
 		// 与触发器的业务节奏不同，且两者失败互不牵连——推送卡住不该影响 agent 触发。
-		go newNotifier(s).Run(s.ctx)
+		s.startBackground(func() { newNotifier(s).Run(s.ctx) })
 		// Fill the tool cache for any enabled MCP that has none yet (notably the
 		// seeded browser MCP on first run). Async so it never blocks startup.
-		go s.discoverEmptyMCPsOnStartup()
+		s.startBackground(s.discoverEmptyMCPsOnStartup)
 		logSink.SetDB(ctx, m.pg) // restore last 100 log rows and enable async persistence
 	}
 	// precedence: persisted DB config > env.
@@ -253,7 +254,7 @@ func New(ctx context.Context, m *Manager, skillDir string, dataDir string, keyDi
 		log.Printf("[engine] no LLM provider configured — engine idle until set via /api/llm or env")
 	}
 	s.restoreTaskRuntimes()
-	go s.reconcileConcurrency()
+	s.startBackground(s.reconcileConcurrency)
 	s.startTaskArchiveWorker()
 	s.wireInterceptReviewer() // LLM 兜底审批:未命中拦截规则的命令交给模型判定
 	return s
@@ -3859,8 +3860,8 @@ func (s *Server) gc(w http.ResponseWriter, r *http.Request) {
 func cors(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		w.Header().Set("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type,Authorization")
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(204)
 			return
@@ -3884,4 +3885,9 @@ func atoiDefault(s string, d int) int {
 		return n
 	}
 	return d
+}
+
+func (s *Server) startBackground(fn func()) {
+	s.backgroundWG.Add(1)
+	go func() { defer s.backgroundWG.Done(); fn() }()
 }

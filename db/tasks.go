@@ -555,12 +555,6 @@ func (d *DB) DeleteTaskCascadePrepared(
 		return result, err
 	}
 
-	// SHARE ROW EXCLUSIVE conflicts with every INSERT/UPDATE/DELETE on these
-	// tables and with another coordinated deletion. Taking both in one fixed order
-	// prevents phantoms (a distinct asset row for the same host) as well as new
-	// ownership/anchor references until the deletion transaction commits.
-	if deleteAssets || prepare != nil {
-	}
 	if prepare != nil {
 		hosts, err := hostsForTaskDeletion(tx, id, expID)
 		if err != nil {

@@ -16,7 +16,7 @@ func TestTaskArchiveAPIQueueListAndLimits(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SQLite unavailable (%v)", err)
 	}
-	defer m.Close()
+	t.Cleanup(func() { m.Close() })
 	task, err := m.CreateTask("archive api", "verify 202", nil, 0, 0)
 	if err != nil {
 		t.Fatal(err)
@@ -35,9 +35,9 @@ func TestTaskArchiveAPIQueueListAndLimits(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	dataDir := t.TempDir()
-	s := New(ctx, m, dataDir, dataDir, dataDir)
+	s := newTestServer(t, ctx, m, dataDir, dataDir, dataDir)
 	s.archiveWG.Wait()
-	token, err := signJWT(s.jwtKey)
+	token, err := signTestJWT(t, s)
 	if err != nil {
 		t.Fatal(err)
 	}

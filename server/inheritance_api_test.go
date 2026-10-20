@@ -16,7 +16,7 @@ func TestInheritedActivityDetailAndRelationDeletion(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SQLite unavailable (%v)", err)
 	}
-	defer m.Close()
+	t.Cleanup(func() { m.Close() })
 
 	source, err := m.CreateTaskWithOptions("detail source", "source goal", db.TaskCreateOptions{})
 	if err != nil {
@@ -52,8 +52,8 @@ func TestInheritedActivityDetailAndRelationDeletion(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	s := New(context.Background(), m, t.TempDir(), t.TempDir(), t.TempDir())
-	token, err := signJWT(s.jwtKey)
+	s := newTestServer(t, context.Background(), m, t.TempDir(), t.TempDir(), t.TempDir())
+	token, err := signTestJWT(t, s)
 	if err != nil {
 		t.Fatal(err)
 	}

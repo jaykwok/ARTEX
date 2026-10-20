@@ -149,7 +149,7 @@ func TestAbortTaskDeleteUsesPersistedPauseAndQueueState(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SQLite unavailable (%v)", err)
 	}
-	defer m.Close()
+	t.Cleanup(func() { m.Close() })
 	task, err := m.CreateTask("delete abort state", "restore persisted barrier", nil, 0, 0)
 	if err != nil {
 		t.Fatal(err)

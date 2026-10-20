@@ -20,11 +20,7 @@ import (
 
 func evidenceFixture(t *testing.T) (*Store, db.RecordFindingInput, string) {
 	t.Helper()
-	dsn, _, err := db.DSN()
-	if err != nil {
-		t.Fatal(err)
-	}
-	pg, err := db.Open(dsn)
+	pg, err := db.Open(filepath.Join(t.TempDir(), "evidence.sqlite"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -315,8 +311,8 @@ func TestEvidenceGCGraceAndActiveRestore(t *testing.T) {
 	err = s.Collect(short, now.Add(72*time.Hour))
 	cancel()
 	close(release)
-	if err == nil {
-		t.Fatal("GC entered during active restore")
+	if err != nil {
+		t.Fatalf("GC blocked by restore: %v", err)
 	}
 	if err = <-finished; err != nil {
 		t.Fatal(err)
@@ -324,10 +320,57 @@ func TestEvidenceGCGraceAndActiveRestore(t *testing.T) {
 	if _, err = os.Stat(path); err != nil {
 		t.Fatal("active restore lost body", err)
 	}
+	if err = s.Collect(ctx, now.Add(96*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = os.Stat(path); !os.IsNotExist(err) {
+		t.Fatal("restore pin leaked", err)
+	}
 	// A portable package cannot substitute metadata while retaining its old ID.
 	bad := snap
 	bad.URL = "http://tampered.local/"
 	if err = s.InstallSnapshots(ctx, []db.TrafficEvidenceSnapshot{bad}, archive); err == nil {
 		t.Fatal("accepted tampered snapshot")
+	}
+}
+func TestActiveBodyCopySurvivesGCWithoutBlockingFindings(t *testing.T) {
+	s, in, _ := evidenceFixture(t)
+	reader, writer := io.Pipe()
+	defer reader.Close()
+	done := make(chan struct{})
+	var bodyErr error
+	go func() { defer close(done); _, bodyErr = s.writeBody(reader, int64(len("slow body")), "") }()
+	defer func() { writer.Close(); <-done }()
+	// The empty staging file is visible while its producer is blocked on input.
+	deadline := time.Now().Add(time.Second)
+	var staged []string
+	for time.Now().Before(deadline) {
+		staged, _ = filepath.Glob(filepath.Join(s.Dir, ".staging", "body-*"))
+		if len(staged) > 0 {
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if len(staged) != 1 {
+		t.Fatal("body copy did not start")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := s.Collect(ctx, time.Now().Add(72*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(staged[0]); err != nil {
+		t.Fatalf("GC removed active staging file: %v", err)
+	}
+	if _, err := s.Record(ctx, in, nil); err != nil {
+		t.Fatalf("body copy blocked unrelated finding: %v", err)
+	}
+	if _, err := writer.Write([]byte("slow body")); err != nil {
+		t.Fatal(err)
+	}
+	writer.Close()
+	<-done
+	if bodyErr != nil {
+		t.Fatal(bodyErr)
 	}
 }
