@@ -25,7 +25,7 @@ COPY web/ ./
 RUN npm run build:static
 
 # ── 源码编译：内嵌前端的 Go 单二进制 ────────────────
-FROM golang:1.27.2-bookworm AS gobuild
+FROM golang:1.27.3-bookworm AS gobuild
 # .dockerignore 排除了 .git，镜像内拿不到 git describe，版本号由构建参数传入。
 # 缺省 dev：页面一键更新会对 dev 构建禁用，Docker 部署本就应通过重建镜像升级。
 ARG ARTEX_VERSION=dev

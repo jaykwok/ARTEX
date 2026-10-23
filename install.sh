@@ -58,7 +58,7 @@ install_local(){
   fi
 
   # go 环境检查
-  command -v go >/dev/null 2>&1 || die "未检测到 Go，请先安装 Go（>=1.27.2）：https://go.dev/dl/"
+  command -v go >/dev/null 2>&1 || die "未检测到 Go，请先安装 Go（>=1.27.3）：https://go.dev/dl/"
   ok "Go: $(go version)"
 
   # 内嵌前端需要 node 出静态产物

@@ -87,7 +87,7 @@ while [ "$#" -gt 0 ]; do
   esac
 done
 
-command -v go >/dev/null 2>&1 || die "未检测到 Go（项目需要 Go 1.27.2 或更高版本）"
+command -v go >/dev/null 2>&1 || die "未检测到 Go（项目需要 Go 1.27.3 或更高版本）"
 
 ARTEX_GOSUMDB="${ARTEX_GOSUMDB:-sum.golang.org}"
 . ./scripts/version.sh

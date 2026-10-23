@@ -546,7 +546,7 @@ flowchart TB
 - `ARTEX_DB_PATH` / `database.path` 必须指向文件管理器目录之外。禁止把 `workspace/` 本身替换为符号链接或目录联接。文件管理器的链接无法逃逸工作区；覆盖文件采用原子替换，不截断硬链接指向的内部数据。
 - 修改密码或管理员重置密码会撤销所有既有登录会话，当前浏览器也必须重新登录；本次升级会使旧签名方式的会话失效一次。
 - 默认同源部署；浏览器跨域 API 支持 Bearer `Authorization` 与 `PATCH` 预检，不提供跨域 cookie credentials。
-- 构建要求 Go 1.27.2 或更高安全补丁版本。`install.sh`、`update.sh` 与 `build.sh` 共用版本解析；带未提交改动的源码仍显示 dirty 版本，正式构建应使用干净的版本标签或显式 `ARTEX_BUILD_VERSION`。
+- 构建要求 Go 1.27.3 或更高安全补丁版本。`install.sh`、`update.sh` 与 `build.sh` 共用版本解析；带未提交改动的源码仍显示 dirty 版本，正式构建应使用干净的版本标签或显式 `ARTEX_BUILD_VERSION`。
 - 开发前端固定为 `http://127.0.0.1:5173`，默认仅监听本机。正式部署继续使用 Go 内嵌静态页面，Node 服务仅用于开发或单独的前端托管。
 - 已删除缺少镜像和 fixture 的 `docker-compose.bench.yml`；当前仓库不提供该旧基准入口。
 - PR、main push 及发布前执行 Go 测试/vet、前端类型检查/测试/lint、依赖扫描和全新 SQLite 启动检查。`npm run lint` 使用逐文件逐规则计数基线，禁止新增错误及保留已解决的基线项；`npm run lint:strict` 可查看全部既有债务，修改基线须审阅 `web/lint-baseline.json` 的差异。
