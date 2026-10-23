@@ -168,14 +168,17 @@ package_binary() {
   # 守护启动脚本是正式入口：页面上的一键更新要靠它在进程退出后重新拉起，
   # 直接跑 artex 本体的话更新完就再也起不来了。按目标系统只带对应的那一份。
   if [ "$goos" = "windows" ]; then
-    cp start.bat "$package_root/"
+    # Enforce CMD line endings even when the source was edited on Unix.
+    awk '{ sub(/\r$/, ""); printf "%s\r\n", $0 }' start.bat > "$package_root/start.bat"
   else
-    cp start.sh "$package_root/"
-    chmod +x "$package_root/start.sh"
+    for script in start.sh reset-password.sh; do
+      # Release archives must run on Unix even when built from a Windows checkout.
+      awk '{ sub(/\r$/, ""); print }' "$script" > "$package_root/$script"
+      chmod +x "$package_root/$script"
+    done
   fi
   cp -R skills "$package_root/"
   cp config.example.json "$package_root/"
-  if [ "$goos" != windows ]; then cp reset-password.sh "$package_root/"; fi
   if [ -f README.md ]; then cp README.md "$package_root/"; fi
   (cd "$ARTEX_PACKAGE_DIR" && zip -q -r -9 "$(basename "$archive")" "$(basename "$package_root")")
   rm -rf "$package_root"

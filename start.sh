@@ -43,9 +43,10 @@ forward() {
 trap forward INT TERM
 
 delay=1
-while :; do
+while [ "$stopping" -eq 0 ]; do
 	"$BIN" "$@" &
 	child=$!
+	[ "$stopping" -eq 0 ] || forward
 
 	# 信号会打断 wait 并让它返回 >128。此时子进程其实还在做优雅关闭，
 	# 必须再 wait 一次才能拿到它真正的退出码。
@@ -74,9 +75,16 @@ while :; do
 			;;
 		*)
 			echo "[artex] 异常退出 (code=$code)，${delay}s 后重启" >&2
-			sleep "$delay"
+			# Keep the retry timer interruptible, just like the backend process.
+			sleep "$delay" &
+			child=$!
+			[ "$stopping" -eq 0 ] || forward
+			wait "$child" || true
+			child=0
 			delay=$((delay * 2))
 			[ "$delay" -gt "$MAX_DELAY" ] && delay=$MAX_DELAY
 			;;
 	esac
 done
+echo "[artex] 已停止"
+exit 0

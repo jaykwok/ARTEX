@@ -75,7 +75,7 @@ install_local(){
   ok "编译完成 → ./artex"
 
   info "启动…（Ctrl-C 退出）"
-  ./artex
+  exec ./start.sh
 }
 
 echo "=============================="
