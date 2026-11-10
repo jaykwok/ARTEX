@@ -150,6 +150,9 @@ while :; do sleep 0.1; done
                 shutil.copyfile(ROOT / name, root / name)
             for directory in ('tools', 'plugins'):
                 shutil.copytree(ROOT / directory, root / directory)
+            # Local review notes must never be included in distribution archives.
+            for name in ('RUNTIME.md', 'UI_REVIEW.md'):
+                (root / name).write_text('local review fixture', encoding='utf-8')
             for name in ('start.sh', 'reset-password.sh', 'start.bat'):
                 data = (ROOT / name).read_bytes().replace(b'\r\n', b'\n')
                 (root / name).write_bytes(data.replace(b'\n', b'\r\n'))
@@ -180,6 +183,8 @@ exit 1
                     prefix = path.stem + '/'
                     self.assertIn(prefix + 'tools/http_headers.yaml', archive.namelist())
                     self.assertIn(prefix + 'plugins/artex-browser-extension/manifest.json', archive.namelist())
+                    self.assertNotIn(prefix + 'RUNTIME.md', archive.namelist())
+                    self.assertNotIn(prefix + 'UI_REVIEW.md', archive.namelist())
                     if 'windows' in path.name:
                         data = archive.read(prefix + 'start.bat')
                         data.decode('ascii')

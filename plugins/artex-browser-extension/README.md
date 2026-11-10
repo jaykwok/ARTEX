@@ -28,4 +28,4 @@ node --test plugins/artex-browser-extension/normalize.test.mjs
 
 本地验收：连接测试 ARTEX → 打开测试页面并刷新 → 选择 GET 请求 → 默认身份头过滤 → 连续两次同步返回相同 traffic_id / hint_id → 打开 ARTEX 流量页核对 → 开启流量录制后指派意图。未经浏览器加载的源码检查不等于真实浏览器端到端验收。
 
-后台开关、验收规则及修订理由见 [RUNTIME.md](../../RUNTIME.md)。
+图片识别需在「系统 → LLM 模型 → 视觉模型」中选择支持图片输入的配置并保存；审计改参在「系统 → 拦截规则 → 模型审批」中单独启用。两项能力默认关闭。

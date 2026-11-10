@@ -26,6 +26,6 @@ parameters:
 - flag 的普通形式为两个 argv 元素；combined: true 使用单个 `--flag=value`。boolean 为 true 添加 flag，为 false 省略。
 - 短描述最多 200 字符，初始工具目录只展示名称和短描述；SearchExtraTools 返回完整 schema。
 - 配方名称发布为 recipe__<name>，默认只分配 worker/retester；可通过 agents 明确指定。
-- 输出落盘、总时限与静默看门狗见 [RUNTIME.md](../RUNTIME.md)。先在隔离测试目录中验证自定义配方。
+- `config.json` 的 `runtime` 段配置执行时限：默认等待 120 秒后转后台，总时限 1800 秒；`no_output_seconds` 默认为 0，关闭无输出超时。输出原文保存在本次运行目录，模型只接收有界预览。先在隔离测试目录中验证自定义配方。
 
 内置 http_headers 依赖 curl，tls_certificate 依赖 openssl；本机缺少其中一个不会阻止 ARTEX 启动。
