@@ -22,6 +22,7 @@ AI 自主渗透测试系统（Go 后端 + Next.js 前端）
   - 移除登录前的「使用须知与免责声明」弹窗，登录不再需要勾选同意；
   - 一键更新源改为本仓库 `jaykwok/ARTEX`，Docker Compose 改为从源码本地构建镜像（不再拉取已下架的 `autumn27/artex`）。
 - 完整变更记录见 [CHANGELOG.md](CHANGELOG.md)。
+- 新增运行时治理、证据验收、YAML 配方、审计改参、视觉模型与 DevTools 扩展的配置及修订说明见 [RUNTIME.md](RUNTIME.md)。
 
 > **从 v1.0.0 开始，所有版本均为本仓库的自维护版本，与原始项目独立发布。** 当前版本按全新 SQLite 实例安装，不提供原 PostgreSQL 数据、配置或旧版部署的兼容及迁移。
 

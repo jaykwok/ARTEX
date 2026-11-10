@@ -18,6 +18,7 @@ type Database struct {
 type Config struct {
 	Database Database `json:"database"`
 	SkillDir string   `json:"skill_dir"`
+	Runtime  Runtime  `json:"runtime"`
 }
 
 // BaseDir is the directory that anchors all runtime artifacts (config.json and

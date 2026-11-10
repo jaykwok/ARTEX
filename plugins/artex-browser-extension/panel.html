@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>ARTEX 请求导入</title><link rel="stylesheet" href="panel.css"></head>
+<body>
+  <header><h1>ARTEX <span>浏览器流量</span></h1><button id="clear" type="button">清空本地记录</button></header>
+  <section class="connection" aria-label="连接 ARTEX">
+    <label>ARTEX 地址<input id="base" type="url" value="http://127.0.0.1:8787" placeholder="https://artex.example.com"></label>
+    <label>管理员密码<input id="password" type="password" autocomplete="off"></label>
+    <button id="connect" type="button">连接</button><button id="logout" type="button">退出</button>
+  </section>
+  <section class="actions" aria-label="导入请求">
+    <label>目标任务<select id="task"><option value="">连接后选择任务</option></select></label>
+    <label class="check"><input id="credentials" type="checkbox">包含 Cookie、Authorization 等身份头</label>
+    <button id="sync" type="button" disabled>同步资产与流量</button>
+    <button id="explore" type="button" disabled>指派高优意图</button>
+  </section>
+  <p class="note">仅记录打开此面板后完成的请求。选中一条再导入；原始请求不会被重放。最多保留 200 条 / 4 MiB，关闭面板即清除。浏览器未提供的响应正文会明确标记。</p>
+  <p id="status" role="status" aria-live="polite">等待请求，可刷新目标页面。</p>
+  <p id="selection-hint" class="note">连接 ARTEX、选择目标任务和一条请求后，即可导入。</p>
+  <main><div class="request-list"><div class="list-heading">捕获请求 <span id="request-count">0 条</span></div><div id="requests" aria-label="捕获请求"></div></div><div class="preview-pane"><div class="list-heading">导入内容预览</div><pre id="preview">选中请求查看导入内容</pre></div></main>
+  <script type="module" src="panel.js"></script>
+</body></html>

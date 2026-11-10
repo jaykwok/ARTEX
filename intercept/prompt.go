@@ -129,9 +129,14 @@ ASK    删除某文件，当前参数无法确认其归属                      
 
 // Verdict is the parsed outcome of the judge's JSON reply.
 type Verdict struct {
-	Action string // "allow" | "ask" | "deny" | "" (unparseable)
-	Reason string
+	Action          string // "allow" | "ask" | "deny" | "" (unparseable)
+	Reason          string
+	EditedArguments json.RawMessage
+	RuleCode        string
 }
+
+const ReviewEditContract = `# 可选改参协议（本节覆盖前文不返回替换参数的格式限制）
+仅在原调用可通过收窄数值边界满足当前策略时，可输出 decision=allow，并额外提供 rule_id（真实规则编号）和 edited_arguments（完整替换参数对象）。只能减少已有正数 timeout/timeout_seconds/max_time/max_rate/rate/threads/concurrency/limit，其他参数保持原样。不得改写 shell 命令、目标、路径、身份信息或扩大权限。无需改参时仍只返回 decision/comment。不能安全自动收窄时按现有策略 ask/deny。`
 
 // stripCodeFence unwraps a fenced reply (```json … ```) before strict parsing.
 // This is a deterministic unwrap, not a repair: the payload still goes through
@@ -164,29 +169,45 @@ func ParseVerdict(text string) Verdict {
 	if tok, err := d.Token(); err != nil || tok != json.Delim('{') {
 		return Verdict{}
 	}
-	fields := map[string]string{}
+	fields := map[string]json.RawMessage{}
 	for d.More() {
 		tok, err := d.Token()
 		if err != nil {
 			return Verdict{}
 		}
 		key, ok := tok.(string)
-		if _, duplicate := fields[key]; !ok || duplicate || (key != "decision" && key != "comment") {
+		if _, duplicate := fields[key]; !ok || duplicate || (key != "decision" && key != "comment" && key != "edited_arguments" && key != "rule_id") {
 			return Verdict{}
 		}
-		var value *string
-		if d.Decode(&value) != nil || value == nil {
+		var value json.RawMessage
+		if d.Decode(&value) != nil || string(value) == "null" {
 			return Verdict{}
 		}
-		fields[key] = *value
+		fields[key] = value
 	}
 	if tok, err := d.Token(); err != nil || tok != json.Delim('}') {
 		return Verdict{}
 	}
-	if _, err := d.Token(); err != io.EOF || len(fields) != 2 {
+	if _, err := d.Token(); err != io.EOF || len(fields) < 2 {
 		return Verdict{}
 	}
-	action, reason := fields["decision"], strings.TrimSpace(fields["comment"])
+	var action, reason, ruleCode string
+	if json.Unmarshal(fields["decision"], &action) != nil || json.Unmarshal(fields["comment"], &reason) != nil {
+		return Verdict{}
+	}
+	reason = strings.TrimSpace(reason)
+	if raw, ok := fields["rule_id"]; ok {
+		if json.Unmarshal(raw, &ruleCode) != nil || strings.TrimSpace(ruleCode) == "" || len(ruleCode) > 64 {
+			return Verdict{}
+		}
+	}
+	edited := fields["edited_arguments"]
+	if len(edited) > 0 {
+		var obj map[string]json.RawMessage
+		if action != "allow" || ruleCode == "" || len(edited) > 16384 || json.Unmarshal(edited, &obj) != nil || obj == nil {
+			return Verdict{}
+		}
+	}
 	if action != "allow" && action != "ask" && action != "deny" {
 		return Verdict{}
 	}
@@ -201,5 +222,5 @@ func ParseVerdict(text string) Verdict {
 	if !ok || strings.TrimSpace(consequence) == "" || strings.TrimSpace(rule) == "" {
 		return Verdict{}
 	}
-	return Verdict{Action: action, Reason: reason}
+	return Verdict{Action: action, Reason: reason, EditedArguments: edited, RuleCode: ruleCode}
 }

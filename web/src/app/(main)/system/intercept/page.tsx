@@ -1,12 +1,15 @@
 "use client";
 
 import * as React from "react";
+import { useQueryTab } from "@/hooks/use-query-tab";
 import { toast } from "sonner";
 import {
   BotIcon,
+  Loader2Icon,
   ListFilterIcon,
   PencilIcon,
   PlusIcon,
+  SaveIcon,
   ShieldAlertIcon,
   Trash2Icon,
 } from "lucide-react";
@@ -203,6 +206,7 @@ const defaultJudge = (): JudgeConfig => ({
   fail_action: "allow",
   ask_timeout_seconds: 300,
   ask_timeout_action: "deny",
+  review_edit: false,
 });
 
 function JudgeCard() {
@@ -211,6 +215,9 @@ function JudgeCard() {
   const [loading, setLoading] = React.useState(true);
   const [saving, setSaving] = React.useState(false);
   const [usage, setUsage] = React.useState<JudgeUsage | null>(null);
+  const [saved, setSaved] = React.useState<JudgeConfig | null>(null);
+  const [loadError, setLoadError] = React.useState("");
+  const dirty = saved !== null && JSON.stringify(cfg) !== JSON.stringify(saved);
 
   // 审批用量统计:失败不打断配置页,仅在开启时拉取。
   const loadUsage = React.useCallback(async () => {
@@ -223,12 +230,14 @@ function JudgeCard() {
 
   const load = React.useCallback(async () => {
     setLoading(true);
+    setLoadError("");
     try {
       const [j, ps] = await Promise.all([api.interceptGetJudgeConfig(), api.llmProfiles()]);
       setCfg(j);
+      setSaved(j);
       setProfiles(ps);
     } catch (e) {
-      toast.error("加载模型兜底配置失败: " + (e as Error).message);
+      setLoadError("加载模型兜底配置失败：" + (e as Error).message);
     } finally {
       setLoading(false);
     }
@@ -244,10 +253,12 @@ function JudgeCard() {
   }, [cfg.enabled, loadUsage]);
 
   function patch(p: Partial<JudgeConfig>) {
+    if (saving || loading || !saved || loadError) return;
     setCfg((c) => ({ ...c, ...p }));
   }
 
   async function save() {
+    if (saving || loading || !dirty || loadError) return;
     setSaving(true);
     try {
       await api.interceptSetJudgeConfig(cfg);
@@ -260,23 +271,16 @@ function JudgeCard() {
     }
   }
 
-  async function restorePrompt() {
-    // 清空提示词并保存 → 服务端下次返回内置模板全文,回填到输入框。
-    setSaving(true);
-    try {
-      await api.interceptSetJudgeConfig({ ...cfg, prompt: "" });
-      const j = await api.interceptGetJudgeConfig();
-      setCfg(j);
-      toast.success("已恢复内置默认模板");
-    } catch (e) {
-      toast.error("恢复失败: " + (e as Error).message);
-    } finally {
-      setSaving(false);
-    }
+  function restorePrompt() {
+    patch({ prompt: "" });
+    toast.info("已选择默认模板，保存配置后生效");
   }
 
   return (
     <div className="space-y-4">
+      {loading && <p role="status" className="text-sm text-muted-foreground">正在加载审批配置…</p>}
+      {loadError && <div role="alert" className="flex flex-wrap items-center gap-3 rounded-lg border p-4 text-sm"><span>{loadError}</span><Button variant="outline" size="sm" onClick={() => void load()} disabled={loading}>重新加载</Button></div>}
+      <fieldset disabled={saving || loading || !!loadError || !saved} className="min-w-0 space-y-4 disabled:opacity-60">
       {/* 启用开关 —— 独立高亮条 */}
       <div
         className={`flex items-center justify-between gap-3 rounded-lg border px-4 py-3 ${
@@ -294,7 +298,7 @@ function JudgeCard() {
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <span className="text-xs text-muted-foreground">{cfg.enabled ? "已启用" : "未启用"}</span>
-          <Switch checked={cfg.enabled} disabled={loading} onCheckedChange={(v) => patch({ enabled: v })} />
+          <Switch aria-label="启用模型兜底审批" checked={cfg.enabled} disabled={loading || saving || !saved || !!loadError} onCheckedChange={(v) => patch({ enabled: v })} />
         </div>
       </div>
 
@@ -343,10 +347,11 @@ function JudgeCard() {
                   <p className="text-xs text-muted-foreground">模型据此判定 ALLOW / ASK / DENY，可直接编辑</p>
                 </div>
                 <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={restorePrompt} disabled={saving}>
-                  恢复默认模板
+                  使用默认模板
                 </Button>
               </div>
               <Textarea
+                aria-label="审批提示词"
                 className="min-h-[22rem] flex-1 resize-none font-mono text-xs leading-relaxed"
                 value={cfg.prompt}
                 onChange={(e) => patch({ prompt: e.target.value })}
@@ -364,7 +369,7 @@ function JudgeCard() {
                 <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">判定模型与策略</p>
                 <Field label="审批模型">
                   <Select value={String(cfg.profile_id || 0)} onValueChange={(v) => patch({ profile_id: Number(v) })}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectTrigger className="w-full" aria-label="审批模型"><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value={FOLLOW_ACTIVE}>跟随激活配置</SelectItem>
                       {profiles.map((p) => (
@@ -375,10 +380,25 @@ function JudgeCard() {
                     </SelectContent>
                   </Select>
                 </Field>
+                <div className="flex items-start justify-between gap-3 rounded-lg border bg-muted/20 p-3">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="review-edit">允许审计改参</Label>
+                    <p id="review-edit-help" className="text-xs leading-relaxed text-muted-foreground">允许自动收窄超时、数量等数值参数。修改命令内容仍需人工审批。</p>
+                  </div>
+                    <Switch
+                      id="review-edit"
+                      className="mt-0.5 shrink-0"
+                      checked={cfg.review_edit ?? false}
+                      disabled={saving || loading || !saved || !!loadError}
+                      onCheckedChange={(checked) => patch({ review_edit: checked })}
+                      aria-describedby="review-edit-help"
+                    />
+                </div>
                 <Field label="模型判定超时（秒）">
                   <Input
                     type="number"
                     min={1}
+                    aria-label="模型判定超时（秒）"
                     value={cfg.timeout_seconds}
                     onChange={(e) => {
                       const n = parseInt(e.target.value, 10);
@@ -388,7 +408,7 @@ function JudgeCard() {
                 </Field>
                 <Field label="模型失败时（出错 / 超时 / 无法解析）">
                   <Select value={cfg.fail_action} onValueChange={(v) => patch({ fail_action: v as JudgeConfig["fail_action"] })}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectTrigger className="w-full" aria-label="模型失败时的处理方式"><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="allow">放行</SelectItem>
                       <SelectItem value="ask">转人工审批</SelectItem>
@@ -406,6 +426,7 @@ function JudgeCard() {
                   <Input
                     type="number"
                     min={5}
+                    aria-label="审批等待超时（秒）"
                     value={cfg.ask_timeout_seconds}
                     onChange={(e) => {
                       const n = parseInt(e.target.value, 10);
@@ -415,7 +436,7 @@ function JudgeCard() {
                 </Field>
                 <Field label="超时后默认动作">
                   <Select value={cfg.ask_timeout_action} onValueChange={(v) => patch({ ask_timeout_action: v as JudgeConfig["ask_timeout_action"] })}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectTrigger className="w-full" aria-label="人工审批超时后的动作"><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="deny">拦截</SelectItem>
                       <SelectItem value="allow">放行</SelectItem>
@@ -428,8 +449,12 @@ function JudgeCard() {
         </div>
       )}
 
-      <div className="flex justify-end">
-        <Button size="sm" onClick={save} disabled={saving || loading}>
+      </fieldset>
+      <div className="sticky bottom-0 z-10 flex flex-wrap items-center justify-end gap-3 border-t bg-background/95 py-3 backdrop-blur">
+        <span role="status" className="mr-auto text-xs text-muted-foreground">{dirty ? "有未保存的修改" : saved && !loadError ? "与已保存配置一致" : ""}</span>
+        {dirty && <Button size="sm" variant="outline" disabled={saving || loading} onClick={() => saved && setCfg(saved)}>撤销修改</Button>}
+        <Button size="sm" onClick={save} disabled={saving || loading || !dirty || !!loadError}>
+          {saving ? <Loader2Icon className="animate-spin" /> : <SaveIcon />}
           {saving ? "保存中…" : "保存配置"}
         </Button>
       </div>
@@ -439,7 +464,8 @@ function JudgeCard() {
 
 // ---- page ----
 
-export default function InterceptPage() {
+function InterceptPageContent() {
+  const [tab, setTab] = useQueryTab(["rules", "judge"], "rules");
   const [rules, setRules]     = React.useState<InterceptRule[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [open, setOpen]       = React.useState(false);
@@ -651,10 +677,10 @@ export default function InterceptPage() {
         </Button>
       </div>
 
-      <Tabs defaultValue="rules" className="flex-1">
+      <Tabs value={tab} onValueChange={setTab} className="flex-1">
         <TabsList>
           <TabsTrigger value="rules">拦截规则</TabsTrigger>
-          <TabsTrigger value="judge">模型配置</TabsTrigger>
+          <TabsTrigger value="judge">模型审批</TabsTrigger>
         </TabsList>
 
         {/* ---- tab: 拦截规则 ---- */}
@@ -982,4 +1008,8 @@ export default function InterceptPage() {
       </Dialog>
     </div>
   );
+}
+
+export default function InterceptPage() {
+  return <React.Suspense fallback={null}><InterceptPageContent /></React.Suspense>;
 }

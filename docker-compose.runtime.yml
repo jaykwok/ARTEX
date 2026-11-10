@@ -1,0 +1,9 @@
+# Optional resource envelope for local tools, including SDK Bash and recipes.
+# docker compose -f docker-compose.yml -f docker-compose.runtime.yml up -d --build
+services:
+  artex:
+    init: true
+    mem_limit: 2g
+    pids_limit: 256
+    volumes:
+      - ./tools:/app/tools:ro

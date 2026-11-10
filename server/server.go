@@ -730,6 +730,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/active", s.setActive)
 
 	mux.HandleFunc("GET /api/llm", s.getLLM)
+	mux.HandleFunc("GET /api/llm/vision", s.getVision)
+	mux.HandleFunc("PUT /api/llm/vision", s.setVision)
 	mux.HandleFunc("POST /api/llm", s.setLLM)
 	mux.HandleFunc("POST /api/llm/test", s.testLLM)
 
@@ -779,6 +781,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/audit", s.getAudit)
 	mux.HandleFunc("POST /api/gc", s.gc)
 	mux.HandleFunc("GET /api/traffic", s.getTraffic)
+	mux.HandleFunc("POST /api/browser/import", s.browserImport)
 	mux.HandleFunc("GET /api/traffic/hosts", s.getTrafficHosts)
 	mux.HandleFunc("DELETE /api/traffic", s.deleteTraffic)
 	mux.HandleFunc("DELETE /api/traffic/hosts", s.deleteTrafficHosts)

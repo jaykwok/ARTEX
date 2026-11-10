@@ -21,12 +21,14 @@ import type {
   FindingTraffic,
   FindingTrafficBinding,
   IntentAsset,
+  JudgeConfig,
   ScopeRow,
   Task,
   TaskArchive,
   TaskAssetMutation,
   TaskAssetScopeMutation,
   TaskCategory,
+  TaskGoal,
   TaskLLMResolution,
   TaskScopeRow,
   TaskTemplate,
@@ -202,6 +204,13 @@ function stopMockRetest(conversationID: number) {
   }
 }
 const mockIntents = structuredClone(D.intents);
+let mockVisionProfile = 0;
+let mockJudge: JudgeConfig = {
+  enabled: false, profile_id: 0, prompt: "", timeout_seconds: 15,
+  fail_action: "allow", ask_timeout_seconds: 300, ask_timeout_action: "deny", review_edit: false,
+};
+const mockGoals = new Map<string, TaskGoal[]>();
+let mockGoalSeq = 100;
 const mockCompanies = structuredClone(D.companies);
 const mockAssets = structuredClone(D.assets);
 const mockActivity = structuredClone(D.activity);
@@ -1515,6 +1524,39 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
   }
 
   // ── 覆盖度 / 覆盖图 / 资产关联（任务维度）──
+  if (seg[0] === "tasks" && seg[2] === "goals") {
+    const taskID = seg[1];
+    if (!mockTasks.some((item) => item.id === taskID)) throw new Error("任务不存在");
+    if (!mockGoals.has(taskID)) {
+      mockGoals.set(taskID, D.explorationGraph.nodes.filter((node) => node.type === "goal").map((node, index) => ({
+        id: node.id, text: JSON.parse(node.payload ?? "{}").text ?? "目标", state: node.state, ts: node.ts,
+        ...(index === 1 ? { coverage_min_pct: 80 } : {}),
+      })));
+    }
+    const goals = mockGoals.get(taskID)!;
+    if (m === "GET") return { goals: structuredClone(goals) };
+    if (m === "POST" || m === "PATCH") {
+      const text = String(b.text ?? "").trim();
+      if (!text) throw new Error("目标描述不能为空");
+      const coverage = b.coverage_min_pct;
+      if (coverage != null && (typeof coverage !== "number" || !Number.isFinite(coverage) || coverage < 0 || coverage > 100)) throw new Error("覆盖率必须在 0–100 之间");
+      const goal = m === "POST" ? { id: `g-${++mockGoalSeq}`, text, state: "open", ts: new Date().toISOString() } as TaskGoal : goals.find((item) => item.id === seg[3]);
+      if (!goal) throw new Error("目标不存在");
+      goal.text = text;
+      goal.vulnclass = String(b.vulnclass ?? "");
+      goal.state = "open";
+      if (coverage === null) delete goal.coverage_min_pct;
+      else if (typeof coverage === "number") goal.coverage_min_pct = coverage;
+      if (m === "POST") goals.push(goal);
+      return structuredClone(goal);
+    }
+    if (m === "DELETE") {
+      const index = goals.findIndex((goal) => goal.id === seg[3]);
+      if (index < 0) throw new Error("目标不存在");
+      goals.splice(index, 1);
+      return { ok: true };
+    }
+  }
   if (seg[0] === "tasks" && seg[2] === "coverage" && seg.length === 3) return D.coverage;
   if (seg[0] === "tasks" && seg[2] === "coverage-graph") return D.coverageGraph;
   if (seg[0] === "tasks" && seg[2] === "asset-refs") return D.assetRefsFor(Number(q.get("asset_id") ?? 0));
@@ -2258,6 +2300,13 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
   if (path === "/llm/test")
     return { ok: true, latency_ms: 128, model: String(b.model ?? "claude-opus-4-8"), reply: "OK" };
   if (path === "/llm/profiles" && m === "GET") return { profiles: D.llmProfiles };
+  if (path === "/llm/vision" && m === "GET") return { profile_id: mockVisionProfile };
+  if (path === "/llm/vision" && m === "PUT") {
+    const id = Number(b.profile_id);
+    if (!Number.isSafeInteger(id) || id < 0 || (id > 0 && !D.llmProfiles.some((profile) => Number(profile.id) === id))) throw new Error("模型配置不存在");
+    mockVisionProfile = id;
+    return { profile_id: id };
+  }
   if (path === "/llm/profiles" && m === "POST") return { id: Number(b.id) || 3 };
   if (path === "/llm/profiles/active") return { ok: true };
   if (path === "/llm/pool" && m === "GET") return D.llmPool;
@@ -2453,17 +2502,11 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
     };
   }
   if (path === "/intercept/tool-config") return { enabled_tools: ["bash"] };
-  if (path === "/intercept/judge" && m === "GET")
-    return {
-      enabled: false,
-      profile_id: 0,
-      prompt: "",
-      timeout_seconds: 15,
-      fail_action: "allow",
-      ask_timeout_seconds: 300,
-      ask_timeout_action: "deny",
-    };
-  if (path === "/intercept/judge" && m === "PUT") return { ok: true };
+  if (path === "/intercept/judge" && m === "GET") return structuredClone(mockJudge);
+  if (path === "/intercept/judge" && m === "PUT") {
+    mockJudge = { ...mockJudge, ...b };
+    return { ok: true };
+  }
   if (path === "/intercept/judge/usage" && m === "GET")
     return {
       calls: 0,

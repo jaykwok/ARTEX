@@ -56,6 +56,11 @@ jobs:
           npm run build:static
       - name: Release metadata tests
         run: python3 -m unittest discover -s scripts -p 'test_*.py'
+      - name: Browser extension checks
+        run: |
+          node --check plugins/artex-browser-extension/background.js
+          node --check plugins/artex-browser-extension/panel.js
+          node --test plugins/artex-browser-extension/normalize.test.mjs
       - name: Embedded binary and fresh SQLite smoke test
         run: |
           mkdir -p server/webui/dist

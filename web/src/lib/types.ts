@@ -450,6 +450,7 @@ export interface TaskGoal {
   id: string;
   text: string;
   vulnclass?: string;
+  coverage_min_pct?: number;
   state: string; // GoalState
   origin?: string;
   ts: string;
@@ -1288,6 +1289,7 @@ export interface InterceptPending {
 
 // JudgeConfig: 模型兜底审批(仅当没有任何拦截规则命中时由模型判断)的全局配置。
 export interface JudgeConfig {
+  review_edit?: boolean;
   enabled: boolean;
   profile_id: number; // 0 = 跟随激活/默认配置
   prompt: string; // 判定提示词;GET 未设置时后端回填内置模板全文

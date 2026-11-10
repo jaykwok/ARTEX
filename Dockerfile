@@ -64,6 +64,7 @@ WORKDIR /app
 COPY start.sh /app/start.sh
 RUN sed -i 's/\r$//' /app/start.sh && chmod +x /app/start.sh
 COPY skills/ /app/skills/
+COPY tools/ /app/tools/
 # data/（SQLite + jwt.key）持久化点
 VOLUME ["/app/data"]
 EXPOSE 8787 8788

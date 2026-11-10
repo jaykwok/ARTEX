@@ -2,6 +2,7 @@ package agent
 
 import (
 	"encoding/json"
+	"strings"
 
 	"github.com/Autumn-27/norma/llm"
 	actool "github.com/Autumn-27/norma/tool"
@@ -20,6 +21,11 @@ func deferredSystem(sysText string, def DeferredInfo) (system []string, boundary
 	block := actool.RenderDeferredToolsBlock(def.GlobalNames)
 	if block == "" {
 		return []string{sysText}, 0
+	}
+	for _, name := range def.GlobalNames {
+		if short := def.ShortDescriptions[name]; short != "" {
+			block += "\n" + name + ": " + strings.ReplaceAll(short, "\n", " ")
+		}
 	}
 	system = []string{sysText, block}
 	boundary = len(system) // b >= len → whole system prompt cached (SDK guard)

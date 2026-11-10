@@ -10,7 +10,9 @@ import (
 	"time"
 
 	"github.com/Autumn-27/artex/agent"
+	"github.com/Autumn-27/artex/config"
 	"github.com/Autumn-27/artex/db"
+	"github.com/Autumn-27/artex/internal/recipes"
 	"github.com/Autumn-27/norma/permission"
 	actool "github.com/Autumn-27/norma/tool"
 )
@@ -44,13 +46,28 @@ func (s *Server) hostTools() ([]actool.CoreTool, map[string][]string) {
 	custom, err := s.customTools()
 	if err != nil {
 		log.Printf("[custom-tool] 加载失败: %v", err)
-		return tools, nil
 	}
 	tools = append(tools, custom...)
 	// deferred custom tools → name -> its bound agent keys. ToolAugment turns a
 	// name into a deferred entry only for agents it's actually bound to (so we don't
 	// advertise a tool the per-agent binding will drop from the callable set).
 	deferred := map[string][]string{}
+	loaded, recipeErrors := recipes.Load(config.RuntimeOptions().RecipeDir)
+	for _, err := range recipeErrors {
+		log.Printf("[recipes] %v", err)
+	}
+	for _, recipe := range loaded {
+		tool := recipe.Tool()
+		tools = append(tools, tool)
+		agents := recipe.Agents
+		if len(agents) == 0 {
+			agents = []string{"worker", "retester"}
+		}
+		deferred[tool.Name()] = agents
+	}
+	if s.visionProfileID() > 0 {
+		tools = append(tools, &visionScopedTool{s.visionTool()})
+	}
 	rows, _ := s.m.pg.ListCustomTools()
 	for _, t := range rows {
 		if t.Deferred && t.Enabled {

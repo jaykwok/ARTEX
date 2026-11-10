@@ -258,20 +258,47 @@ func (s *ExplorationStore) SetNodeState(id int64, state string) error {
 // UpdateGoalPayload rewrites a goal node's payload text (and optional vulnclass);
 // scoped to kind='goal' so it can never mutate an intent/fact by id. Returns an
 // error if no such goal exists in this exploration.
-func (s *ExplorationStore) UpdateGoalPayload(id int64, text, vulnclass string) error {
-	payload := map[string]any{"text": text}
+func (s *ExplorationStore) UpdateGoalPayload(id int64, text, vulnclass string, coverage ...*float64) error {
+	node, err := s.GetNode(id)
+	if err != nil || node == nil || node.Kind != KindGoal {
+		return fmt.Errorf("目标不存在")
+	}
+	payload := map[string]any{}
+	if err := json.Unmarshal(node.Payload, &payload); err != nil {
+		return err
+	}
+	payload["text"] = text
+	// Omitted preserves the existing contract; explicit nil removes it.
+	if len(coverage) > 0 {
+		delete(payload, "coverage_min_pct")
+		if coverage[0] != nil {
+			if *coverage[0] < 0 || *coverage[0] > 100 {
+				return fmt.Errorf("coverage_min_pct must be 0–100")
+			}
+			payload["coverage_min_pct"] = *coverage[0]
+		}
+	}
+	delete(payload, "vulnclass")
 	if vulnclass != "" {
 		payload["vulnclass"] = vulnclass
 	}
 	raw, _ := json.Marshal(payload)
-	res, err := s.db.Exec(`UPDATE exploration_nodes SET updated_at=now(), payload=$1 WHERE id=$2 AND exploration_id=$3 AND kind='goal'`, string(raw), id, s.expID)
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	res, err := tx.Exec(`UPDATE exploration_nodes SET updated_at=now(), payload=$1, state='open', content_version=content_version+1 WHERE id=$2 AND exploration_id=$3 AND kind='goal' AND payload=$4`, string(raw), id, s.expID, string(node.Payload))
 	if err != nil {
 		return err
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
 		return fmt.Errorf("目标不存在")
 	}
-	return nil
+	if _, err = tx.Exec(`DELETE FROM exploration_edges WHERE exploration_id=$1 AND dst_id=$2 AND rel=$3`, s.expID, id, RelProves); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // DeleteGoal hard-deletes a goal node; scoped to kind='goal' so it can never drop

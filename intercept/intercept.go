@@ -141,6 +141,7 @@ func (i *Interceptor) SetReviewer(r Reviewer) {
 // defaultEnabledTools is the hard-coded set of tools that enter the intercept
 // rule system when no intercept_enabled_tools setting has been saved.
 var defaultEnabledTools = []string{
+	"recipe__*", "analyze_image",
 	"Bash", "WebFetch", "web_search",
 	"shell_open", "shell_send",
 	"Write", "Edit", "MultiEdit",
@@ -233,7 +234,7 @@ func (i *Interceptor) rules() ([]compiledRule, error) {
 func (i *Interceptor) IsToolEnabled(name string) bool {
 	i.mu.RLock()
 	if i.enabledTools != nil {
-		v := i.enabledTools[name]
+		v := i.enabledTools[name] || (strings.HasPrefix(name, "recipe__") && i.enabledTools["recipe__*"])
 		i.mu.RUnlock()
 		return v
 	}
@@ -244,7 +245,7 @@ func (i *Interceptor) IsToolEnabled(name string) bool {
 	if i.enabledTools == nil {
 		_ = i.loadLocked()
 	}
-	return i.enabledTools[name]
+	return i.enabledTools[name] || (strings.HasPrefix(name, "recipe__") && i.enabledTools["recipe__*"])
 }
 
 // GetEnabledTools returns the ordered list of tool names that are currently
@@ -283,6 +284,8 @@ func (i *Interceptor) SetEnabledTools(tools []string) error {
 
 // Decision is the outcome of a successful rule match.
 type Decision struct {
+	EditedArguments  json.RawMessage
+	RuleCode         string
 	ModelInput       json.RawMessage
 	ModelInputDigest string
 	ModelFallback    bool
@@ -321,6 +324,7 @@ const (
 // JudgeConfig is the resolved LLM-fallback-judge configuration. Prompt is always
 // non-empty (falls back to DefaultJudgePrompt).
 type JudgeConfig struct {
+	ReviewEdit        bool   `json:"review_edit"`
 	Enabled           bool   `json:"enabled"`
 	ProfileID         int64  `json:"profile_id"` // 0 = follow active/default
 	Prompt            string `json:"prompt"`
@@ -335,6 +339,7 @@ type JudgeConfig struct {
 // follows dwarfs a few KV reads, and freshness avoids a cache-invalidation path.
 func (i *Interceptor) judgeConfig() JudgeConfig {
 	c := JudgeConfig{
+		ReviewEdit:        i.db.GetBool("llm_judge_review_edit", false),
 		Enabled:           i.db.GetBool(settingJudgeEnabled, false),
 		ProfileID:         int64(i.getSettingInt(settingJudgeProfileID, 0)),
 		TimeoutSeconds:    i.getSettingInt(settingJudgeTimeoutSecs, defaultJudgeTimeoutSecs),
@@ -390,6 +395,9 @@ func (i *Interceptor) GetJudgeConfig() JudgeConfig { return i.judgeConfig() }
 // SetJudgeConfig persists the judge configuration. An empty Prompt clears the
 // override (the built-in template is used again).
 func (i *Interceptor) SetJudgeConfig(c JudgeConfig) error {
+	if err := i.db.SetBool("llm_judge_review_edit", c.ReviewEdit); err != nil {
+		return err
+	}
 	if err := i.db.SetBool(settingJudgeEnabled, c.Enabled); err != nil {
 		return err
 	}
@@ -444,6 +452,9 @@ func (i *Interceptor) Judge(ctx context.Context, tool string, arguments json.Raw
 
 	input, contextErr := BuildReviewInput(cctx, tool, arguments)
 	cfg.Prompt = EffectiveJudgePrompt(cfg.Prompt)
+	if cfg.ReviewEdit {
+		cfg.Prompt += "\n\n" + ReviewEditContract
+	}
 	var out Decision
 	var err error
 	var modelInput []byte
@@ -465,6 +476,10 @@ func (i *Interceptor) Judge(ctx context.Context, tool string, arguments json.Raw
 		out = Decision{ProfileID: out.ProfileID, ModelFallback: true, Action: cfg.FailAction, Message: "模型输出无法解析,按失败策略处理"}
 	}
 	// A model verdict never carries a rule; keep RuleID 0 (→ NULL) for history.
+	if len(out.EditedArguments) > 0 && !cfg.ReviewEdit {
+		out.Action = "ask"
+		out.Message = "自动改参未启用，建议参数需人工审批。" + out.Message
+	}
 	out.RuleID = 0
 	if len(modelInput) > 0 {
 		out.ModelInput = modelInput

@@ -4,5 +4,15 @@
     "path": "data/artex.sqlite"
   },
   "_comment_skill_dir": "留空使用可执行文件同级的 skills/。",
-  "skill_dir": ""
+  "skill_dir": "",
+  "_comment_runtime": "0 使用默认值；no_output_seconds 默认关闭，安静输出不等于挂死。recipe_dir 留空使用同级 tools/。",
+  "runtime": {
+    "tool_wait_seconds": 120,
+    "tool_timeout_seconds": 1800,
+    "no_output_seconds": 0,
+    "mcp_concurrency": 5,
+    "mcp_failure_threshold": 5,
+    "mcp_cooldown_seconds": 60,
+    "recipe_dir": ""
+  }
 }

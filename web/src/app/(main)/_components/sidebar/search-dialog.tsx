@@ -4,7 +4,7 @@ import * as React from "react";
 
 import { useRouter } from "next/navigation";
 
-import { Search } from "lucide-react";
+import { Brain, Search, ShieldAlert } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -68,6 +68,11 @@ function getAvailableItems(items: SearchItem[]) {
 }
 
 const recommendations = getAvailableItems(searchItems);
+const settingItems: SearchItem[] = [
+  { id: "vision", group: "常用设置", label: "视觉模型 · 图片识别", url: "/system/llm?tab=vision", icon: Brain },
+  { id: "retry", group: "常用设置", label: "模型重试与退避", url: "/system/llm?tab=retry", icon: Brain },
+  { id: "judge", group: "常用设置", label: "模型审批 · 审计改参", url: "/system/intercept?tab=judge", icon: ShieldAlert },
+];
 
 function groupBy(items: SearchItem[]) {
   const groups = [...new Set(items.map((item) => item.group))];
@@ -80,9 +85,11 @@ function groupBy(items: SearchItem[]) {
 export function SearchDialog() {
   const [open, setOpen] = React.useState(false);
   const [query, setQuery] = React.useState("");
+  const [shortcut, setShortcut] = React.useState("Ctrl J");
   const router = useRouter();
 
   React.useEffect(() => {
+    setShortcut(/Mac|iPhone|iPad/.test(navigator.platform) ? "⌘ J" : "Ctrl J");
     const down = (e: KeyboardEvent) => {
       if (e.key === "j" && (e.metaKey || e.ctrlKey)) {
         e.preventDefault();
@@ -138,17 +145,17 @@ export function SearchDialog() {
         className="px-0! font-normal text-muted-foreground hover:no-underline"
       >
         <Search data-icon="inline-start" />
-        Search
+        搜索页面
         <kbd className="inline-flex h-5 select-none items-center gap-1 rounded border bg-muted px-1.5 font-medium text-[10px]">
-          <span className="text-xs">⌘</span>J
+          {shortcut}
         </kbd>
       </Button>
-      <CommandDialog open={open} onOpenChange={handleOpenChange}>
+      <CommandDialog title="搜索页面与设置" description="输入页面或设置名称，使用方向键选择，回车打开。" open={open} onOpenChange={handleOpenChange}>
         <Command>
-          <CommandInput placeholder="Search dashboards, users, and more…" value={query} onValueChange={setQuery} />
+          <CommandInput aria-label="搜索页面与设置" placeholder="搜索任务、视觉模型、审批等页面…" value={query} onValueChange={setQuery} />
           <CommandList>
-            <CommandEmpty>No results found.</CommandEmpty>
-            {query ? renderGroups(searchItems) : renderGroups(recommendations)}
+            <CommandEmpty>没有匹配的页面，试试“模型”或“任务”。</CommandEmpty>
+            {renderGroups(query ? [...recommendations, ...settingItems] : [...settingItems, ...recommendations])}
           </CommandList>
         </Command>
       </CommandDialog>

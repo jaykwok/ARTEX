@@ -23,6 +23,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Autumn-27/artex/config"
+	"github.com/Autumn-27/artex/internal/tooloutput"
+
 	"github.com/Autumn-27/norma/llm"
 	"github.com/Autumn-27/norma/permission"
 	actool "github.com/Autumn-27/norma/tool"
@@ -58,6 +61,7 @@ func (e *rpcError) Error() string { return fmt.Sprintf("mcp rpc error %d: %s", e
 // Client is a connection to one remote MCP server. New uses Streamable HTTP;
 // NewSSE uses the legacy GET /sse + POST /message transport.
 type Client struct {
+	breaker *circuit
 	server  string
 	url     string
 	headers map[string]string
@@ -73,7 +77,6 @@ type Client struct {
 	streamBody   io.ReadCloser
 	streamCancel context.CancelFunc
 	streamDone   chan struct{}
-	legacyMu     sync.Mutex
 	pendingMu    sync.Mutex
 	pending      map[int]chan *rpcResponse
 	streamErr    chan error
@@ -97,15 +100,18 @@ func normalizeHeaders(headers map[string]string) (map[string]string, error) {
 // When insecure is true, TLS certificate verification is skipped so servers that
 // present a self-signed certificate can still be reached (issue #108).
 func New(ctx context.Context, server, url string, headers map[string]string, insecure bool) (*Client, error) {
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
 	cleanHeaders, err := normalizeHeaders(headers)
 	if err != nil {
 		return nil, err
 	}
-	hc := &http.Client{Timeout: 120 * time.Second}
+	hc := &http.Client{}
 	if insecure {
 		hc.Transport = &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}
 	}
 	c := &Client{
+		breaker:  serverCircuit(server, url, cleanHeaders),
 		server:   server,
 		url:      url,
 		headers:  cleanHeaders,
@@ -122,6 +128,8 @@ func New(ctx context.Context, server, url string, headers map[string]string, ins
 // announces a per-session POST /message endpoint, while JSON-RPC responses are
 // delivered asynchronously as SSE message events.
 func NewSSE(ctx context.Context, server, sseURL string, headers map[string]string, insecure bool) (*Client, error) {
+	ctx, handshakeCancel := context.WithTimeout(ctx, 30*time.Second)
+	defer handshakeCancel()
 	cleanHeaders, err := normalizeHeaders(headers)
 	if err != nil {
 		return nil, err
@@ -131,6 +139,8 @@ func NewSSE(ctx context.Context, server, sseURL string, headers map[string]strin
 		hc.Transport = &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}
 	}
 	streamCtx, cancel := context.WithCancel(context.Background())
+	stopHandshake := context.AfterFunc(ctx, cancel)
+	defer stopHandshake()
 	req, err := http.NewRequestWithContext(streamCtx, http.MethodGet, sseURL, nil)
 	if err != nil {
 		cancel()
@@ -158,6 +168,7 @@ func NewSSE(ctx context.Context, server, sseURL string, headers map[string]strin
 		return nil, err
 	}
 	c := &Client{
+		breaker:      serverCircuit(server, sseURL, cleanHeaders),
 		server:       server,
 		url:          sseURL,
 		headers:      cleanHeaders,
@@ -181,7 +192,7 @@ func NewSSE(ctx context.Context, server, sseURL string, headers map[string]strin
 
 func readSSEEndpoint(r *bufio.Reader, base string) (string, error) {
 	for {
-		line, err := r.ReadString('\n')
+		line, err := readBoundedLine(r, 8192)
 		if err != nil {
 			return "", fmt.Errorf("mcp sse endpoint: %w", err)
 		}
@@ -197,21 +208,36 @@ func readSSEEndpoint(r *bufio.Reader, base string) (string, error) {
 		if err != nil {
 			return "", fmt.Errorf("mcp sse endpoint URL: %w", err)
 		}
-		if !u.IsAbs() {
-			b, err := url.Parse(base)
-			if err != nil {
-				return "", err
-			}
-			candidate = b.ResolveReference(u).String()
+		b, err := url.Parse(base)
+		if err != nil {
+			return "", err
 		}
-		return candidate, nil
+		u = b.ResolveReference(u)
+		if u.User != nil || u.Scheme != b.Scheme || !strings.EqualFold(u.Host, b.Host) {
+			return "", fmt.Errorf("mcp sse endpoint must stay on the configured origin")
+		}
+		return u.String(), nil
+	}
+}
+
+func readBoundedLine(r *bufio.Reader, limit int) (string, error) {
+	var b strings.Builder
+	for {
+		chunk, err := r.ReadSlice('\n')
+		if b.Len()+len(chunk) > limit {
+			return "", fmt.Errorf("mcp SSE line exceeds limit")
+		}
+		b.Write(chunk)
+		if err != bufio.ErrBufferFull {
+			return b.String(), err
+		}
 	}
 }
 
 func (c *Client) readLegacySSE(r *bufio.Reader) {
 	defer close(c.streamDone)
 	for {
-		line, err := r.ReadString('\n')
+		line, err := readBoundedLine(r, 16<<20)
 		if err != nil {
 			if !errors.Is(err, context.Canceled) {
 				select {
@@ -299,7 +325,7 @@ func (c *Client) wrap(rt remoteTool) actool.CoreTool {
 			}
 			raw, err := c.call(ctx, "tools/call", map[string]any{"name": rt.Name, "arguments": args})
 			if err != nil {
-				return actool.Errorf("Error: " + err.Error()), nil
+				return actool.Errorf(tooloutput.Capture(tc, "Error: "+err.Error())), nil
 			}
 			var res struct {
 				Content []struct {
@@ -311,14 +337,14 @@ func (c *Client) wrap(rt remoteTool) actool.CoreTool {
 			if err := json.Unmarshal(raw, &res); err != nil {
 				return actool.Errorf("Error: bad MCP response: " + err.Error()), nil
 			}
-			var text string
+			var text strings.Builder
 			for _, blk := range res.Content {
-				text += blk.Text
+				text.WriteString(blk.Text)
 			}
 			// 与内置/自定义工具一致：超长输出走 Capture——按会话 MaxOutputChars（默认
 			// 30000）截断，配了 ToolOutputDir 时全量溢写到磁盘只留 head + 指针，避免大
 			// MCP 结果整段灌爆上下文。
-			return actool.Result{Content: []llm.ContentBlock{llm.TextBlock(actool.Capture(tc, text))}, IsError: res.IsError}, nil
+			return actool.Result{Content: []llm.ContentBlock{llm.TextBlock(tooloutput.Capture(tc, text.String()))}, IsError: res.IsError}, nil
 		},
 	})
 }
@@ -374,7 +400,9 @@ func (c *Client) Close() error {
 	if sid == "" {
 		return nil
 	}
-	req, err := http.NewRequest(http.MethodDelete, c.url, nil)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, c.url, nil)
 	if err != nil {
 		return nil
 	}
@@ -390,7 +418,23 @@ func (c *Client) Close() error {
 
 // --- JSON-RPC over Streamable HTTP ---
 
-func (c *Client) call(ctx context.Context, method string, params any) (json.RawMessage, error) {
+func (c *Client) call(ctx context.Context, method string, params any) (result json.RawMessage, callErr error) {
+	caller := ctx
+	if c.breaker != nil {
+		done, err := c.breaker.enter(ctx)
+		if err != nil {
+			return nil, err
+		}
+		defer func() {
+			if caller.Err() != nil {
+				done(context.Canceled)
+			} else {
+				done(callErr)
+			}
+		}()
+	}
+	ctx, cancel := context.WithTimeout(ctx, time.Duration(config.RuntimeOptions().ToolTimeoutSeconds)*time.Second)
+	defer cancel()
 	c.mu.Lock()
 	c.nextID++
 	id := c.nextID
@@ -402,8 +446,14 @@ func (c *Client) call(ctx context.Context, method string, params any) (json.RawM
 	if resp == nil {
 		return nil, fmt.Errorf("mcp: empty response for %s", method)
 	}
+	if resp.ID != id {
+		return nil, fmt.Errorf("mcp: invalid response for %s", method)
+	}
 	if resp.Error != nil {
 		return nil, resp.Error
+	}
+	if len(resp.Result) == 0 {
+		return nil, fmt.Errorf("mcp: missing result for %s", method)
 	}
 	return resp.Result, nil
 }
@@ -470,7 +520,7 @@ func (c *Client) roundTrip(ctx context.Context, body rpcRequest, expectResp bool
 		return parseSSE(resp.Body, body.ID)
 	}
 	var out rpcResponse
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 16<<20)).Decode(&out); err != nil {
 		return nil, fmt.Errorf("mcp: decode json response: %w", err)
 	}
 	return &out, nil
@@ -479,10 +529,8 @@ func (c *Client) roundTrip(ctx context.Context, body rpcRequest, expectResp bool
 // legacyRoundTrip posts to the endpoint announced by GET /sse. The HTTP POST
 // only acknowledges receipt; the JSON-RPC response arrives on the SSE stream.
 func (c *Client) legacyRoundTrip(ctx context.Context, body rpcRequest, expectResp bool) (*rpcResponse, error) {
-	// Serializing calls keeps the first implementation deterministic while the
-	// shared SSE reader still handles asynchronous delivery.
-	c.legacyMu.Lock()
-	defer c.legacyMu.Unlock()
+	// Responses are correlated by ID; serializing with a mutex made queued calls
+	// impossible to cancel and let a hung call block every tool on this connection.
 
 	data, err := json.Marshal(body)
 	if err != nil {
@@ -525,6 +573,8 @@ func (c *Client) legacyRoundTrip(ctx context.Context, body rpcRequest, expectRes
 		return response, nil
 	case err := <-c.streamErr:
 		return nil, fmt.Errorf("mcp sse stream: %w", err)
+	case <-c.streamDone:
+		return nil, fmt.Errorf("mcp sse stream closed")
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}
@@ -560,6 +610,9 @@ func parseSSE(r io.Reader, wantID int) (*rpcResponse, error) {
 			continue
 		}
 		if strings.HasPrefix(line, "data:") {
+			if dataBuf.Len()+len(line) > 16<<20 {
+				return nil, fmt.Errorf("mcp SSE event exceeds 16 MiB")
+			}
 			dataBuf.WriteString(strings.TrimSpace(line[len("data:"):]))
 		}
 	}

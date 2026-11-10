@@ -1,0 +1,18 @@
+version: 1
+name: tls_certificate
+enabled: true
+command: openssl
+args: ["s_client", "-showcerts"]
+short_description: 查看指定主机的 TLS 证书链。
+description: 连接 server 指定的主机与端口；stdin 关闭，遵守运行时超时。可用 server_name 设置 SNI。
+agents: [worker, retester]
+parameters:
+  - name: server
+    type: string
+    flag: -connect
+    required: true
+    description: host:port
+  - name: server_name
+    type: string
+    flag: -servername
+    description: TLS SNI 主机名

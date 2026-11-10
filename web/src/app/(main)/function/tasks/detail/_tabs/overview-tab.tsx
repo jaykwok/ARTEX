@@ -10,6 +10,7 @@ import {
   ClockIcon,
   CoinsIcon,
   ListChecksIcon,
+  Loader2Icon,
   PencilIcon,
   PlusIcon,
   RefreshCwIcon,
@@ -21,6 +22,8 @@ import {
 } from "lucide-react";
 
 import { StatusBadge } from "@/components/status-badge";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { GoalFields } from "./goal-fields";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -127,11 +130,16 @@ export function OverviewTab({ taskId }: { taskId: string }) {
   const [goals, setGoals] = React.useState<TaskGoal[]>([]);
   const [goalText, setGoalText] = React.useState("");
   const [goalVuln, setGoalVuln] = React.useState("");
+  const [goalCoverage, setGoalCoverage] = React.useState("");
   const [goalBusy, setGoalBusy] = React.useState(false);
   const [goalErr, setGoalErr] = React.useState("");
+  const [goalsLoaded, setGoalsLoaded] = React.useState(false);
+  const [goalLoadErr, setGoalLoadErr] = React.useState("");
+  const [deletingGoal, setDeletingGoal] = React.useState<TaskGoal | null>(null);
   const [editingGoalId, setEditingGoalId] = React.useState<string | null>(null);
   const [editText, setEditText] = React.useState("");
   const [editVuln, setEditVuln] = React.useState("");
+  const [editCoverage, setEditCoverage] = React.useState("");
   // 约束管理：约束列表 + 新增表单 + 行内编辑状态。
   const [constraints, setConstraints] = React.useState<TaskConstraint[]>([]);
   const [conText, setConText] = React.useState("");
@@ -164,20 +172,28 @@ export function OverviewTab({ taskId }: { taskId: string }) {
     try {
       const resp = await api.taskGoals(taskId);
       setGoals(resp.goals);
-    } catch {
-      // 忽略：瞬时错误，下次轮询重试
+      setGoalLoadErr("");
+    } catch (error) {
+      setGoalLoadErr(error instanceof Error ? error.message : "目标加载失败");
+    } finally {
+      setGoalsLoaded(true);
     }
   }, [taskId]);
 
   const addGoal = async () => {
     const text = goalText.trim();
-    if (!text) return;
+    if (!text || goalBusy) return;
     setGoalBusy(true);
     setGoalErr("");
     try {
-      await api.addGoal(taskId, text, goalVuln.trim() || undefined);
+      const coverage = goalCoverage.trim() ? Number(goalCoverage) : undefined;
+      if (coverage !== undefined && (!Number.isFinite(coverage) || coverage < 0 || coverage > 100)) {
+        throw new Error("覆盖率阈值需为 0–100，留空表示不设此门槛");
+      }
+      await api.addGoal(taskId, text, goalVuln.trim() || undefined, coverage);
       setGoalText("");
       setGoalVuln("");
+      setGoalCoverage("");
       await loadGoals();
     } catch (e) {
       setGoalErr(e instanceof Error ? e.message : "添加失败");
@@ -187,24 +203,32 @@ export function OverviewTab({ taskId }: { taskId: string }) {
   };
 
   const startEditGoal = (g: TaskGoal) => {
+    setGoalErr("");
     setEditingGoalId(g.id);
     setEditText(g.text);
     setEditVuln(g.vulnclass ?? "");
+    setEditCoverage(g.coverage_min_pct == null ? "" : String(g.coverage_min_pct));
   };
 
   const cancelEditGoal = () => {
+    setGoalErr("");
     setEditingGoalId(null);
     setEditText("");
     setEditVuln("");
+    setEditCoverage("");
   };
 
   const saveEditGoal = async (g: TaskGoal) => {
     const text = editText.trim();
-    if (!text) return;
+    if (!text || goalBusy) return;
     setGoalBusy(true);
     setGoalErr("");
     try {
-      await api.updateGoal(taskId, g.id, text, editVuln.trim() || undefined);
+      const coverage = editCoverage.trim() ? Number(editCoverage) : null;
+      if (coverage !== null && (!Number.isFinite(coverage) || coverage < 0 || coverage > 100)) {
+        throw new Error("覆盖率阈值需为 0–100，留空表示不设此门槛");
+      }
+      await api.updateGoal(taskId, g.id, text, editVuln.trim() || undefined, coverage);
       cancelEditGoal();
       await loadGoals();
     } catch (e) {
@@ -215,11 +239,17 @@ export function OverviewTab({ taskId }: { taskId: string }) {
   };
 
   const removeGoal = async (g: TaskGoal) => {
-    setGoals((prev) => prev.filter((x) => x.id !== g.id));
+    if (goalBusy) return;
+    setGoalBusy(true);
+    setGoalErr("");
     try {
       await api.deleteGoal(taskId, g.id);
-    } catch {
-      await loadGoals(); // 删除失败：重新拉取还原
+      setGoals((prev) => prev.filter((x) => x.id !== g.id));
+      setDeletingGoal(null);
+    } catch (error) {
+      setGoalErr(error instanceof Error ? error.message : "删除失败，请重试");
+    } finally {
+      setGoalBusy(false);
     }
   };
 
@@ -447,126 +477,64 @@ export function OverviewTab({ taskId }: { taskId: string }) {
           </div>
         </CardContent>
       </Card>
-      {/* 目标管理：查看/新增/修改/删除本任务的探索目标。新增与修改会通知规划者并复活任务，
-          删除仅通知规划者（不复活）。目标 = 最终可交付/可核验的结果，不是攻击步骤或侦察动作。 */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
             <ListChecksIcon className="size-4 text-primary" /> 目标管理
-            <span className="text-muted-foreground text-xs font-normal">
-              （最终可核验的目标，共 {goals.length} 条；新增/修改会通知规划者并复活任务）
-            </span>
+            <span className="text-xs font-normal text-muted-foreground">{goals.length} 条</span>
           </CardTitle>
+          <CardDescription>新增或修改目标会通知规划者并恢复任务执行。修改后需要重新提交证据验收。</CardDescription>
         </CardHeader>
-        <CardContent className="flex flex-col gap-3">
-          {/* 新增表单 */}
-          <div className="flex flex-wrap items-center gap-2">
-            <Input
-              className="h-7 min-w-56 flex-1 text-sm"
-              placeholder="新增目标，如『拿到管理员账号的越权访问』"
-              value={goalText}
-              onChange={(e) => setGoalText(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") void addGoal();
-              }}
-              disabled={goalBusy}
-            />
-            <Input
-              className="h-7 w-32 text-sm"
-              placeholder="漏洞类(可选)"
-              value={goalVuln}
-              onChange={(e) => setGoalVuln(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") void addGoal();
-              }}
-              disabled={goalBusy}
-            />
-            <Button size="sm" variant="outline" disabled={goalBusy || !goalText.trim()} onClick={() => void addGoal()}>
-              <PlusIcon className="size-3.5" /> 添加
+        <CardContent className="space-y-4">
+          <form className="space-y-3 rounded-lg border bg-muted/20 p-4" onSubmit={(e) => { e.preventDefault(); void addGoal(); }}>
+            <GoalFields text={goalText} vuln={goalVuln} coverage={goalCoverage} onText={setGoalText} onVuln={setGoalVuln} onCoverage={setGoalCoverage} disabled={goalBusy || !goalsLoaded || !!goalLoadErr} />
+            <Button type="submit" size="sm" disabled={goalBusy || !goalText.trim() || !goalsLoaded || !!goalLoadErr}>
+              {goalBusy && !editingGoalId && !deletingGoal ? <Loader2Icon className="animate-spin" /> : <PlusIcon />} 添加目标
             </Button>
-            {goalErr && <span className="text-xs text-red-500">{goalErr}</span>}
-          </div>
-          {/* 目标列表 */}
-          {goals.length > 0 ? (
-            <div className="flex flex-col gap-1.5">
-              {goals.map((g) =>
-                editingGoalId === g.id ? (
-                  <div key={g.id} className="flex flex-wrap items-center gap-2 rounded-md border px-2.5 py-1.5">
-                    <Input
-                      className="h-7 min-w-56 flex-1 text-sm"
-                      value={editText}
-                      onChange={(e) => setEditText(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") void saveEditGoal(g);
-                        if (e.key === "Escape") cancelEditGoal();
-                      }}
-                      disabled={goalBusy}
-                      autoFocus
-                    />
-                    <Input
-                      className="h-7 w-32 text-sm"
-                      placeholder="漏洞类(可选)"
-                      value={editVuln}
-                      onChange={(e) => setEditVuln(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") void saveEditGoal(g);
-                        if (e.key === "Escape") cancelEditGoal();
-                      }}
-                      disabled={goalBusy}
-                    />
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="h-6 shrink-0 px-1.5"
-                      disabled={goalBusy || !editText.trim()}
-                      onClick={() => void saveEditGoal(g)}
-                    >
-                      <CheckIcon className="size-3.5 text-emerald-500" />
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="h-6 shrink-0 px-1.5"
-                      disabled={goalBusy}
-                      onClick={cancelEditGoal}
-                    >
-                      <XIcon className="size-3.5" />
-                    </Button>
-                  </div>
-                ) : (
-                  <div key={g.id} className="flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-sm">
+          </form>
+          {goalErr && <p role="alert" className="text-sm text-destructive">{goalErr}</p>}
+          {goalLoadErr && <div role="alert" className="flex flex-wrap items-center gap-2 text-sm text-destructive"><span>加载目标失败：{goalLoadErr}</span><Button variant="outline" size="sm" onClick={() => void loadGoals()}>重新加载</Button></div>}
+          {!goalsLoaded && <p role="status" className="text-sm text-muted-foreground">正在加载目标…</p>}
+          <div className="space-y-2">
+            {goals.map((g) => editingGoalId === g.id ? (
+              <form key={g.id} className="space-y-3 rounded-lg border border-primary/30 p-4" onSubmit={(e) => { e.preventDefault(); void saveEditGoal(g); }} onKeyDown={(e) => { if (e.key === "Escape" && !goalBusy) cancelEditGoal(); }}>
+                <GoalFields text={editText} vuln={editVuln} coverage={editCoverage} onText={setEditText} onVuln={setEditVuln} onCoverage={setEditCoverage} disabled={goalBusy} autoFocus />
+                <div className="flex flex-wrap gap-2">
+                  <Button type="submit" size="sm" disabled={goalBusy || !editText.trim()}>{goalBusy ? <Loader2Icon className="animate-spin" /> : <CheckIcon />} 保存修改</Button>
+                  <Button type="button" size="sm" variant="outline" disabled={goalBusy} onClick={cancelEditGoal}>取消</Button>
+                </div>
+              </form>
+            ) : (
+              <div key={g.id} className="flex items-start gap-3 rounded-lg border p-3 text-sm">
+                <div className="min-w-0 flex-1 space-y-2">
+                  <p className="break-words leading-relaxed">{g.text}</p>
+                  <div className="flex flex-wrap items-center gap-2">
                     <StatusBadge domain="goal" value={g.state} />
-                    <span className="min-w-0 flex-1 break-words">{g.text}</span>
-                    {g.vulnclass && (
-                      <span className="bg-muted text-muted-foreground shrink-0 rounded px-1.5 py-0.5 text-xs">
-                        {g.vulnclass}
-                      </span>
-                    )}
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="h-6 shrink-0 px-1.5"
-                      disabled={goalBusy}
-                      onClick={() => startEditGoal(g)}
-                    >
-                      <PencilIcon className="size-3.5" />
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="h-6 shrink-0 px-1.5"
-                      disabled={goalBusy}
-                      onClick={() => void removeGoal(g)}
-                    >
-                      <Trash2Icon className="size-3.5 text-red-500" />
-                    </Button>
+                    {g.coverage_min_pct != null && <span className="rounded bg-muted px-2 py-0.5 text-xs text-muted-foreground">覆盖率 ≥ {g.coverage_min_pct}%</span>}
+                    {g.vulnclass && <span className="break-all rounded bg-muted px-2 py-0.5 text-xs text-muted-foreground">{g.vulnclass}</span>}
                   </div>
-                ),
-              )}
-            </div>
-          ) : (
-            <p className="text-muted-foreground text-sm">暂无目标，添加后规划者会据此派发探索意图并判定达成。</p>
-          )}
+                </div>
+                <div className="flex shrink-0 gap-1">
+                  <Button size="icon-sm" variant="ghost" disabled={goalBusy} aria-label={`编辑目标：${g.text}`} title="编辑目标" onClick={() => startEditGoal(g)}><PencilIcon /></Button>
+                  <Button size="icon-sm" variant="ghost" disabled={goalBusy} aria-label={`删除目标：${g.text}`} title="删除目标" onClick={() => { setGoalErr(""); setDeletingGoal(g); }}><Trash2Icon className="text-destructive" /></Button>
+                </div>
+              </div>
+            ))}
+          </div>
+          {goalsLoaded && !goalLoadErr && goals.length === 0 && <p className="text-sm text-muted-foreground">暂无目标。添加一个可核验的结果，规划者将据此安排探索。</p>}
+          <AlertDialog open={!!deletingGoal} onOpenChange={(open) => { if (!open && !goalBusy) setDeletingGoal(null); }}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>删除这个目标？</AlertDialogTitle>
+                <AlertDialogDescription>“{deletingGoal?.text}”将从任务中永久删除。规划者会收到通知，任务不会因此恢复执行。</AlertDialogDescription>
+              </AlertDialogHeader>
+              {goalErr && <p role="alert" className="text-sm text-destructive">{goalErr}</p>}
+              <AlertDialogFooter>
+                <AlertDialogCancel disabled={goalBusy}>取消</AlertDialogCancel>
+                <AlertDialogAction disabled={goalBusy} onClick={(e) => { e.preventDefault(); if (deletingGoal) void removeGoal(deletingGoal); }}>{goalBusy ? "删除中…" : "删除目标"}</AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </CardContent>
       </Card>
       {/* 操作约束管理：allow=允许 / deny=禁止。约束会在下一轮规划时注入 planner/worker 的系统

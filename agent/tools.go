@@ -1189,11 +1189,16 @@ func (t *ToolSet) proveGoal() actool.CoreTool {
 			if err != nil || evidenceNode == nil || (evidenceNode.Kind != db.KindFact && evidenceNode.Kind != db.KindFinding) {
 				return actool.Errorf("evidence_id 必须是本任务或直接关联任务的事实/漏洞节点"), nil
 			}
-			_ = t.ts.Link(ev, db.RelProves, goal)
-			_ = t.ts.SetNodeState(goal, "met")
+			if err := t.verifyGoal(goalNode, evidenceNode); err != nil {
+				return actool.Errorf("prove_goal rejected by verifier: " + err.Error()), nil
+			}
+			if err := t.ts.ProveGoal(goalNode, evidenceNode, a.Reason); err != nil {
+				return actool.Errorf(err.Error()), nil
+			}
 			// 每标记一个目标 met，就检查本任务是否【所有目标】都已 met；若是，自动判定
 			// 任务完成（置 GoalMet），无需再依赖模型显式调 goal_met。
-			if goals, err := t.ts.ListByKind(db.KindGoal, 1000); err == nil && len(goals) > 0 {
+			if met, err := t.allGoalsVerified(); err == nil && met {
+				goals, _ := t.ts.ListByKind(db.KindGoal, 1000)
 				allMet := true
 				for _, g := range goals {
 					if g.State != "met" {
@@ -1212,11 +1217,18 @@ func (t *ToolSet) proveGoal() actool.CoreTool {
 }
 
 func (t *ToolSet) goalMet() actool.CoreTool {
-	return writeTool("goal_met", "【立即结束整个任务】——仅当你确认任务的【全部目标都已真正达成、整体收官】时才调（注意是任务【整体】完成；仅仅达成了其中某一个目标/某一个 flag/某一个漏洞【不算】——那种情况用 prove_goal 标记该目标即可）。⚠️它不是用来“结束本轮规划”的：本轮没有新意图要派、或在等 worker 产出，都【直接结束本轮即可，不要调本工具】（0 个意图是完全正常的）。正常判定优先用 prove_goal 逐个证明目标；goal_met 只是绕过逐个证明、直接从全局收官的手段。",
+	return writeTool("goal_met", "【立即结束整个任务】仅在全部目标均已通过 prove_goal 证据核验后可调用。它不能绕过逐个证明，也不是用来结束本轮规划；没有新意图或等待 worker 时直接结束本轮即可。",
 		obj(map[string]any{"reason": str("达成理由（必须是目标真正达成的证据，不能是“本轮无新方向”这类结束本轮的理由）")}, "reason"),
 		func(_ context.Context, in json.RawMessage) (actool.Result, error) {
 			var a struct{ Reason string }
 			_ = json.Unmarshal(in, &a)
+			if t.ts == nil {
+				return actool.Errorf("goal_met requires task context"), nil
+			}
+			met, err := t.allGoalsVerified()
+			if err != nil || !met {
+				return actool.Errorf("goal_met rejected: prove every goal with evidence first"), nil
+			}
 			t.GoalMet = true
 			t.Reason = a.Reason
 			return actool.Text("acknowledged: goal marked met"), nil
@@ -1448,8 +1460,9 @@ func (t *ToolSet) addOneHint(it hintItem) (int64, error) {
 }
 
 type goalItem struct {
-	Text      string `json:"text"`
-	VulnClass string `json:"vulnclass"`
+	Text           string   `json:"text"`
+	VulnClass      string   `json:"vulnclass"`
+	CoverageMinPct *float64 `json:"coverage_min_pct,omitempty"`
 }
 
 // addOneGoal 挂一条 goal 节点(open)到探索图:连到任务根(origin fact,rel spawns)。
@@ -1461,6 +1474,12 @@ func (t *ToolSet) addOneGoal(it goalItem) (int64, error) {
 		return 0, fmt.Errorf("text 不能为空")
 	}
 	payload := map[string]any{"text": text}
+	if it.CoverageMinPct != nil {
+		if *it.CoverageMinPct < 0 || *it.CoverageMinPct > 100 {
+			return 0, fmt.Errorf("coverage_min_pct must be between 0 and 100")
+		}
+		payload["coverage_min_pct"] = *it.CoverageMinPct
+	}
 	if vc := strings.TrimSpace(it.VulnClass); vc != "" {
 		payload["vulnclass"] = vc
 	}
@@ -1486,9 +1505,10 @@ func (t *ToolSet) setGoals() actool.CoreTool {
 			"★优先批量:多个目标放进 goals 数组一次提交,返回 ids 与之等长同序(失败项 id=0,详情见 errors)。单条则省略 goals 直接给顶层 text。\n"+
 			"vulnclass 可选:对应漏洞类(如 SQLi/IDOR),业务逻辑类目标留空。目标是否达成由系统判定标记 met,本工具只负责新增。",
 		obj(map[string]any{
-			"goals":     map[string]any{"type": "array", "description": "【优先用这个】要新增的目标数组,按顺序处理。每个元素:text(必填,一个独立可验证的最终目标)+ vulnclass(可选)。返回 ids 与本数组等长、同序。", "items": map[string]any{"type": "object"}},
-			"text":      str("[单条] 一个独立可验证的最终目标"),
-			"vulnclass": str("[单条] 对应漏洞类(若明确),如 SQLi/IDOR;业务逻辑目标可留空"),
+			"goals":            map[string]any{"type": "array", "description": "【优先用这个】要新增的目标数组,按顺序处理。每个元素:text(必填,一个独立可验证的最终目标)+ vulnclass(可选)。返回 ids 与本数组等长、同序。", "items": map[string]any{"type": "object"}},
+			"text":             str("[单条] 一个独立可验证的最终目标"),
+			"coverage_min_pct": map[string]any{"type": "number", "minimum": 0, "maximum": 100, "description": "可选：仅当用户明确要求资产覆盖百分比时填写 0–100；批量 goals 的每项也支持此字段。"},
+			"vulnclass":        str("[单条] 对应漏洞类(若明确),如 SQLi/IDOR;业务逻辑目标可留空"),
 		}),
 		func(_ context.Context, in json.RawMessage) (actool.Result, error) {
 			if t.ts == nil {

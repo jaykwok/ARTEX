@@ -2071,7 +2071,11 @@ func (t *Traffic) Tools() []actool.CoreTool {
 			if err != nil {
 				return actool.Errorf(err.Error()), nil
 			}
-			return actool.Text("=== REQUEST ===\n" + clip(req, 2500) + "\n\n=== RESPONSE ===\n" + clip(resp, 4000)), nil
+			note := ""
+			if strings.HasPrefix(a.ID, "browser-") {
+				note = "[浏览器导入：未由 ARTEX 复测，身份头或响应正文可能省略；不能以缺失正文判断目标响应。]\n"
+			}
+			return actool.Text(note + "=== REQUEST ===\n" + clip(req, 2500) + "\n\n=== RESPONSE ===\n" + clip(resp, 4000)), nil
 		},
 	})
 

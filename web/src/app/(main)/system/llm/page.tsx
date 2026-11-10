@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { useQueryTab } from "@/hooks/use-query-tab";
 
 import {
   Loader2Icon,
@@ -31,6 +32,7 @@ import type { LLMPoolMember, LLMPoolStatus, LLMProfile, LLMRetryOverride } from 
 import { cn } from "@/lib/utils";
 
 import { ProfileRetryFields, RetryPolicyPanel, ZERO_OVERRIDE } from "./_components/retry";
+import { VisionPanel } from "./_components/vision";
 
 // 思考开关(thinking.type)与思考强度(reasoning_effort)是两个【互相独立】的字段，
 // 各自单独设置——有些接口没有 thinking 字段、只靠强度参数就能激活思考，故需解耦。
@@ -785,8 +787,11 @@ function ProfileSheet({
 
 // ─────────────────────────────────────────────────────────────────────────────
 
-export default function LLMPage() {
+function LLMPageContent() {
+  const [tab, setTab] = useQueryTab(["profiles", "retry", "vision"], "profiles");
   const [profiles, setProfiles] = React.useState<LLMProfile[]>([]);
+  const [profilesLoading, setProfilesLoading] = React.useState(true);
+  const [profilesError, setProfilesError] = React.useState("");
   const [pool, setPool] = React.useState<LLMPoolStatus | null>(null);
   const [poolOpen, setPoolOpen] = React.useState(false);
   // 抽屉的开关和内容分开存：关闭时 editing 保持不变，否则关闭动画期间标题会从
@@ -807,10 +812,14 @@ export default function LLMPage() {
   }, []);
 
   const load = React.useCallback(async () => {
+    setProfilesLoading(true);
+    setProfilesError("");
     try {
       setProfiles(await api.llmProfiles());
-    } catch {
-      /* ignore */
+    } catch (error) {
+      setProfilesError(error instanceof Error ? error.message : "加载模型配置失败");
+    } finally {
+      setProfilesLoading(false);
     }
     await loadPool();
   }, [loadPool]);
@@ -856,9 +865,9 @@ export default function LLMPage() {
     <div className="flex flex-1 flex-col gap-4 md:gap-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="font-semibold text-xl tracking-tight">LLM</h1>
+          <h1 className="font-semibold text-xl tracking-tight">LLM 模型</h1>
           <p className="text-muted-foreground text-sm">
-            全 Agent 共享的格式 / 模型 / 限速配置。点击卡片编辑，星标为当前激活配置。
+            管理模型连接、重试策略和独立视觉模型。星标为当前激活配置。
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -876,13 +885,19 @@ export default function LLMPage() {
         </div>
       </div>
 
-      <Tabs defaultValue="profiles" className="flex-1">
+      <Tabs value={tab} onValueChange={setTab} className="flex-1">
         <TabsList>
           <TabsTrigger value="profiles">模型配置</TabsTrigger>
           <TabsTrigger value="retry">重试与退避</TabsTrigger>
+          <TabsTrigger value="vision">视觉模型</TabsTrigger>
         </TabsList>
 
+        <TabsContent value="vision" className="mt-4">
+          <VisionPanel profiles={profiles} profilesLoading={profilesLoading} profilesError={profilesError} onReloadProfiles={() => void load()} onCreate={() => openEditor(null)} />
+        </TabsContent>
         <TabsContent value="profiles" className="mt-4">
+          {profilesLoading && <p role="status" className="mb-4 text-sm text-muted-foreground">正在加载模型配置…</p>}
+          {profilesError && <div role="alert" className="mb-4 flex flex-wrap items-center gap-3 rounded-lg border p-4 text-sm"><span>{profilesError}</span><Button variant="outline" size="sm" onClick={() => void load()}>重新加载</Button></div>}
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
             {profiles.map((p) => {
               const h = healthOf(p, health.get(p.id));
@@ -894,13 +909,14 @@ export default function LLMPage() {
                   tabIndex={0}
                   onClick={() => openEditor(p)}
                   onKeyDown={(e) => {
+                    if (e.target !== e.currentTarget) return;
                     if (e.key === "Enter" || e.key === " ") {
                       e.preventDefault();
                       openEditor(p);
                     }
                   }}
                   className={cn(
-                    "cursor-pointer gap-0 py-4 outline-none transition-colors hover:border-foreground/30",
+                    "cursor-pointer gap-0 py-4 outline-none transition-colors hover:border-foreground/30 focus-visible:ring-2 focus-visible:ring-ring",
                     p.is_default && "border-amber-400/50 bg-amber-400/5",
                   )}
                 >
@@ -970,7 +986,7 @@ export default function LLMPage() {
                 </Card>
               );
             })}
-            {profiles.length === 0 && (
+            {!profilesLoading && !profilesError && profiles.length === 0 && (
               <div className="col-span-full rounded-lg border border-dashed p-10 text-center text-muted-foreground text-sm">
                 还没有模型配置，点击右上角「新建」创建第一个。
               </div>
@@ -987,4 +1003,8 @@ export default function LLMPage() {
       <PoolSheet open={poolOpen} onOpenChange={setPoolOpen} pool={pool} onReload={loadPool} />
     </div>
   );
+}
+
+export default function LLMPage() {
+  return <React.Suspense fallback={null}><LLMPageContent /></React.Suspense>;
 }

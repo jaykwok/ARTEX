@@ -468,9 +468,11 @@ func (w *Worker) execute(ctx context.Context, name string, taskID int64, as *db.
 		NonStreaming:  w.nonStreaming(),                       // 该 profile 选非流式时走 Provider.Complete
 		MaxTokens:     w.maxTokens(),                          // 0 = 不发上限,由服务端默认值决定
 	}
-	if hooks != nil { // typed-nil guard: only set when concrete (avoids harness panic)
-		opts.Hooks = hooks
+	finalizer := &workerFinalizer{tools: tsx, runs: def.Executions}
+	if hooks != nil { // Preserve delegation to the caller's optional hooks.
+		finalizer.base = hooks
 	}
+	opts.Hooks = finalizer
 	if w.tx != nil { // persist raw LLM conversation; one file per worked intent
 		opts.Transcript = w.tx
 		opts.SessionID = WorkerSessionID(ts.ID(), intent.ID)
@@ -531,5 +533,8 @@ func (w *Worker) execute(ctx context.Context, name string, taskID int64, as *db.
 	// still settles (no external hard-timeout backstop needed). ctx itself carries only
 	// pause / planner kill / shutdown, which the engine distinguishes and re-queues/stops.
 	_, reason, err := captureRunSession(ctx, s, input, emitWrap)
+	if finalizer.failed && err == nil {
+		err = fmt.Errorf("worker finalization failed: pending tools or missing writeback")
+	}
 	return reason, tsx.Writes(), err
 }

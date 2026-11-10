@@ -1,0 +1,14 @@
+version: 1
+name: http_headers
+enabled: true
+command: curl
+args: ["--head", "--silent", "--show-error", "--max-time", "30", "--proto", "=http,https"]
+short_description: 读取单个 HTTP 端点的响应头（30 秒上限）。
+description: 使用 curl 参数数组发起 HEAD 请求。url 必须是完整 HTTP/HTTPS 地址，不接受额外命令行参数。
+agents: [worker, retester]
+parameters:
+  - name: url
+    type: string
+    flag: --url
+    required: true
+    description: 完整的 HTTP 或 HTTPS URL

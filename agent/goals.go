@@ -68,8 +68,9 @@ const goalsScopeTail = `
 
 // GoalSpec is one decomposed objective.
 type GoalSpec struct {
-	Text      string `json:"text"`
-	VulnClass string `json:"vulnclass,omitempty"`
+	Text           string   `json:"text"`
+	VulnClass      string   `json:"vulnclass,omitempty"`
+	CoverageMinPct *float64 `json:"coverage_min_pct,omitempty"`
 }
 
 // DecomposeGoalsWithProvider is the task-runtime variant used when a task has an
@@ -97,6 +98,7 @@ func DecomposeGoalsWithProvider(ctx context.Context, prov llm.Provider, dataDir,
 	// {{.EngagementDescription}} template var — else a prompt that references the var
 	// would inject the description twice. System prompt stays pure static instructions.
 	sys := renderSystem("goals", goalsDefaultTmpl, GoalsVars{DataDir: dataDir, Now: nowStr()})
+	sys += "\n若用户明确要求资产覆盖百分比，在相应 set_goals 项填写 coverage_min_pct（0–100，例如 95）。不要从文字猜测其他量化指标，不得自行降低用户阈值。getshell/webshell/reverse_shell 目标要求已确认的 shell finding 和实际交互证据，不能用 RCE 或上传成功替代。"
 	// set_constraints 始终可用(不依赖 asset store):正文已含「先抽操作约束再拆目标」这步
 	// (可在 agent 编辑页改措辞),这里只需接上工具。
 	tools := []actool.CoreTool{tsx.setGoals(), tsx.setConstraints()}
@@ -138,13 +140,10 @@ func DecomposeGoalsWithProvider(ctx context.Context, prov llm.Provider, dataDir,
 	nodes, _ := ts.ListByKind(db.KindGoal, 10000)
 	var out []GoalSpec
 	for _, n := range nodes {
-		var p struct {
-			Text      string `json:"text"`
-			VulnClass string `json:"vulnclass"`
-		}
+		var p GoalSpec
 		_ = json.Unmarshal(n.Payload, &p)
 		if strings.TrimSpace(p.Text) != "" {
-			out = append(out, GoalSpec{Text: p.Text, VulnClass: p.VulnClass})
+			out = append(out, p)
 		}
 	}
 	return out

@@ -100,9 +100,26 @@ jobs:
           name: bin-linux-${{ matrix.goarch }}
           path: dist/artex-linux-${{ matrix.goarch }}/artex
 
+  browser-extension:
+    needs: metadata
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Package browser extension
+        run: |
+          mkdir -p dist
+          cd plugins/artex-browser-extension
+          zip -9 "../../dist/artex-browser-extension-${GITHUB_REF_NAME#v}.zip" \
+            manifest.json background.js devtools.html devtools.js \
+            panel.html panel.css panel.js normalize.mjs README.md
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pkg-browser-extension
+          path: dist/artex-browser-extension-*.zip
+
   # ③ 汇总所有 zip → 创建 GitHub Release
   release:
-    needs: [binaries, docker, metadata]
+    needs: [binaries, docker, metadata, browser-extension]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

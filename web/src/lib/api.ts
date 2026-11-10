@@ -381,11 +381,11 @@ export const api = {
   taskGoals: (id: string) =>
     get<{ goals: TaskGoal[] | null }>(`/tasks/${id}/goals`).then((response) => ({ goals: arr(response.goals) })),
   // 人工新增目标：写入图谱并通知 planner、复活任务。
-  addGoal: (id: string, text: string, vulnclass?: string) =>
-    post<TaskGoal>(`/tasks/${id}/goals`, { text, vulnclass: vulnclass ?? "" }),
+  addGoal: (id: string, text: string, vulnclass?: string, coverage_min_pct?: number) =>
+    post<TaskGoal>(`/tasks/${id}/goals`, { text, vulnclass: vulnclass ?? "", coverage_min_pct }),
   // 人工修改目标文本（及 vulnclass）：通知 planner「由 old 变为 new」、复活任务。
-  updateGoal: (id: string, goalId: string, text: string, vulnclass?: string) =>
-    patch<TaskGoal>(`/tasks/${id}/goals/${goalId}`, { text, vulnclass: vulnclass ?? "" }),
+  updateGoal: (id: string, goalId: string, text: string, vulnclass?: string, coverage_min_pct?: number | null) =>
+    patch<TaskGoal>(`/tasks/${id}/goals/${goalId}`, { text, vulnclass: vulnclass ?? "", coverage_min_pct }),
   // 人工删除目标（硬删除）：通知 planner，删除不复活任务。
   deleteGoal: (id: string, goalId: string) => del<{ ok: boolean }>(`/tasks/${id}/goals/${goalId}`),
 
@@ -940,6 +940,8 @@ export const api = {
       session_header_key,
     }),
   llmProfiles: () => get<{ profiles: LLMProfile[] }>("/llm/profiles").then((r) => arr(r.profiles)),
+  visionConfig: () => get<{ profile_id: number }>("/llm/vision"),
+  saveVisionConfig: (profile_id: number) => put<{ profile_id: number }>("/llm/vision", { profile_id }),
   saveLLMProfile: (p: {
     id?: number; // omit/0 = create; set = update that profile
     name: string;

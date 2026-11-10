@@ -57,7 +57,7 @@ func (s *Server) wireInterceptReviewer() {
 		if v.Action == "" {
 			return intercept.Decision{ProfileID: profileID}, fmt.Errorf("模型裁决格式无效，必须包含裁决、实际操作、成功后的后果和命中规则")
 		}
-		return intercept.Decision{Action: v.Action, Message: v.Reason, ProfileID: profileID}, nil
+		return intercept.Decision{Action: v.Action, Message: v.Reason, ProfileID: profileID, EditedArguments: v.EditedArguments, RuleCode: v.RuleCode}, nil
 	})
 }
 

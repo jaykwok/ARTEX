@@ -44,8 +44,9 @@ func (s *Server) addGoal(w http.ResponseWriter, r *http.Request) {
 	defer s.engine.decInflight(t.ID)
 
 	var body struct {
-		Text      string `json:"text"`
-		VulnClass string `json:"vulnclass"`
+		Text           string   `json:"text"`
+		VulnClass      string   `json:"vulnclass"`
+		CoverageMinPct *float64 `json:"coverage_min_pct"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeErr(w, 400, "invalid JSON")
@@ -57,6 +58,13 @@ func (s *Server) addGoal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	payload := map[string]any{"text": text}
+	if body.CoverageMinPct != nil {
+		if *body.CoverageMinPct < 0 || *body.CoverageMinPct > 100 {
+			writeErr(w, 400, "coverage_min_pct must be 0–100")
+			return
+		}
+		payload["coverage_min_pct"] = *body.CoverageMinPct
+	}
 	if vc := strings.TrimSpace(body.VulnClass); vc != "" {
 		payload["vulnclass"] = vc
 	}
@@ -98,8 +106,9 @@ func (s *Server) editGoal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		Text      string `json:"text"`
-		VulnClass string `json:"vulnclass"`
+		Text      string          `json:"text"`
+		VulnClass string          `json:"vulnclass"`
+		Coverage  json.RawMessage `json:"coverage_min_pct"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeErr(w, 400, "invalid JSON")
@@ -120,7 +129,16 @@ func (s *Server) editGoal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	oldText := goalDTO(node).Text
-	if err := t.Store.UpdateGoalPayload(gid, text, strings.TrimSpace(body.VulnClass)); err != nil {
+	var coverage []*float64
+	if len(body.Coverage) > 0 {
+		var value *float64
+		if json.Unmarshal(body.Coverage, &value) != nil || (value != nil && (*value < 0 || *value > 100)) {
+			writeErr(w, 400, "coverage_min_pct must be null or 0–100")
+			return
+		}
+		coverage = append(coverage, value)
+	}
+	if err := t.Store.UpdateGoalPayload(gid, text, strings.TrimSpace(body.VulnClass), coverage...); err != nil {
 		writeErr(w, 500, err.Error())
 		return
 	}

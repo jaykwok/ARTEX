@@ -178,8 +178,12 @@ package_binary() {
     done
   fi
   cp -R skills "$package_root/"
+  cp -R tools "$package_root/"
+  cp -R plugins "$package_root/"
   cp config.example.json "$package_root/"
   if [ -f README.md ]; then cp README.md "$package_root/"; fi
+  if [ -f RUNTIME.md ]; then cp RUNTIME.md "$package_root/"; fi
+  if [ -f UI_REVIEW.md ]; then cp UI_REVIEW.md "$package_root/"; fi
   (cd "$ARTEX_PACKAGE_DIR" && zip -q -r -9 "$(basename "$archive")" "$(basename "$package_root")")
   rm -rf "$package_root"
   ok "Release 压缩包：$archive"

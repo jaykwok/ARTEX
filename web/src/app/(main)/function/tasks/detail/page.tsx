@@ -37,6 +37,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { api } from "@/lib/api";
+import { useQueryTab } from "@/hooks/use-query-tab";
 import type { LLMProfile, Task } from "@/lib/types";
 
 import { AssetsTab } from "./_tabs/assets-tab";
@@ -209,7 +210,7 @@ function TaskDetailInner() {
   const [task, setTask] = React.useState<Task | null>(null);
   const [paused, setPaused] = React.useState(false);
   const [loaded, setLoaded] = React.useState(false);
-  const [tab, setTab] = React.useState("sessions");
+  const [tab, setTab] = useQueryTab(TABS.map((item) => item.value), "sessions");
   const [interceptPendingCount, setInterceptPendingCount] = React.useState(0);
   const [profiles, setProfiles] = React.useState<LLMProfile[]>([]);
   const [archiving, setArchiving] = React.useState(false);
@@ -354,7 +355,7 @@ function TaskDetailInner() {
         <div className="flex items-center gap-2">
           <SidebarTrigger className="-ml-1" />
           <Button asChild variant="ghost" size="icon" className="size-7">
-            <Link href="/function/tasks">
+            <Link href="/function/tasks" aria-label="返回任务列表">
               <ArrowLeftIcon />
             </Link>
           </Button>
@@ -421,7 +422,7 @@ function TaskDetailInner() {
           <SessionsTab taskId={id} />
         </TabsContent>
         <TabsContent value="overview" className="mt-0">
-          <OverviewTab taskId={id} />
+          <OverviewTab key={id} taskId={id} />
         </TabsContent>
         <TabsContent value="graph" className="mt-0">
           <GraphTab taskId={id} />

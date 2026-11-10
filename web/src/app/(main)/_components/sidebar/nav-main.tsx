@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 
 import { ChevronRight } from "lucide-react";
 import { api } from "@/lib/api";
+import { activeNavigationUrl } from "@/lib/navigation";
 
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import {
@@ -85,29 +86,28 @@ function hasSubItems(item: NavMainItem): item is NavMainParentItem {
 
 export function NavMain({ items }: NavMainProps) {
   const rawPath = usePathname();
-  // 路由段含中文，pathname 可能是百分号编码，解码后再与导航 url 比较，保证高亮命中。
-  const path = (() => {
-    try {
-      return decodeURIComponent(rawPath);
-    } catch {
-      return rawPath;
-    }
-  })();
+  const { setOpenMobile } = useSidebar();
+  // biome-ignore lint/correctness/useExhaustiveDependencies: close the mobile drawer after route navigation, including browser history.
+  React.useEffect(() => { setOpenMobile(false); }, [rawPath, setOpenMobile]);
+  const activeUrl = activeNavigationUrl(
+    rawPath,
+    items.flatMap((group) => group.items.flatMap((item) => hasSubItems(item) ? item.subItems.map((sub) => sub.url) : [item.url])),
+  );
 
   const isItemActive = (item: NavMainItem) => {
     if (hasSubItems(item)) {
-      return item.subItems.some((sub) => path.startsWith(sub.url));
+      return item.subItems.some((sub) => sub.url === activeUrl);
     }
 
-    return path === item.url;
+    return activeUrl === item.url;
   };
 
   const isSubItemActive = (url: string) => {
-    return path === url;
+    return activeUrl === url;
   };
 
   const isSubmenuOpen = (item: NavMainParentItem) => {
-    return item.subItems.some((sub) => path.startsWith(sub.url));
+    return item.subItems.some((sub) => sub.url === activeUrl);
   };
 
   return (
@@ -185,12 +185,15 @@ function InterceptPendingBadge() {
 }
 
 function NavLinkItem({ item, isActive, showIconFallback }: NavLinkItemProps) {
+  const { setOpenMobile } = useSidebar();
   return (
     <SidebarMenuItem>
       <SidebarMenuButton asChild aria-disabled={item.disabled} tooltip={item.title} isActive={isActive}>
         <Link
           prefetch={false}
           href={item.url}
+          aria-current={isActive ? "page" : undefined}
+          onClick={() => setOpenMobile(false)}
           target={item.newTab ? "_blank" : undefined}
           rel={item.newTab ? "noreferrer" : undefined}
         >

@@ -6,6 +6,9 @@ import (
 	"fmt"
 	"log"
 	"runtime/debug"
+	"strings"
+
+	"github.com/Autumn-27/artex/internal/toolrun"
 
 	actool "github.com/Autumn-27/norma/tool"
 )
@@ -16,11 +19,13 @@ import (
 // UnlockSkill unlocks a named skill's MCPs — hosts call it to rebuild the unlock set
 // from history on a resumed session (design doc C2).
 type DeferredInfo struct {
-	FindingGuidance string            // derived from the final permitted tools, including DB overrides
-	Deferred        []string          // all MCP tool names (schema withheld)
-	GlobalNames     []string          // MCP names to list in the system-prompt block
-	Unlock          *actool.UnlockSet // shared call-gate; nil when no MCP tools
-	UnlockSkill     func(skillName string)
+	Executions        *toolrun.Manager
+	FindingGuidance   string            // derived from the final permitted tools, including DB overrides
+	Deferred          []string          // all MCP tool names (schema withheld)
+	GlobalNames       []string          // MCP names to list in the system-prompt block
+	ShortDescriptions map[string]string // recipe summaries; full schema loads on search
+	Unlock            *actool.UnlockSet // shared call-gate; nil when no MCP tools
+	UnlockSkill       func(skillName string)
 }
 
 // ToolAugment, if set, returns the EXTRA tools an agent should see beyond its
@@ -61,9 +66,20 @@ func AugmentTools(ctx context.Context, agentKey string, base []actool.CoreTool) 
 		out = ToolResolve(ctx, agentKey, out)
 	}
 	out, def.FindingGuidance = findingWorkflowTools(agentKey, out)
+	manager := toolrun.New(ctx)
+	def.Executions = manager
+	hasAsync := false
 	for i, t := range out {
-		out[i] = guardPanic(t)
+		if strings.HasPrefix(t.Name(), "mcp__") || strings.HasPrefix(t.Name(), "recipe__") {
+			hasAsync = true
+		}
+		out[i] = manager.Wrap(guardPanic(t))
 	}
+	if hasAsync {
+		out = append(out, manager.Tools()...)
+	}
+	priorCleanup := cleanup
+	cleanup = func() { manager.Close(); priorCleanup() }
 	return out, def, cleanup
 }
 

@@ -1,0 +1,11 @@
+{
+  "manifest_version": 3,
+  "name": "ARTEX DevTools",
+  "version": "1.0.0",
+  "description": "选择浏览器请求，同步至 ARTEX 资产与流量库，或指派探索意图。",
+  "devtools_page": "devtools.html",
+  "background": { "service_worker": "background.js" },
+  "permissions": ["storage"],
+  "optional_host_permissions": ["http://*/*", "https://*/*"],
+  "content_security_policy": { "extension_pages": "script-src 'self'; object-src 'none'" }
+}

@@ -148,6 +148,8 @@ while :; do sleep 0.1; done
                 root.joinpath(directory).mkdir(parents=True)
             for name in ('build.sh', 'config.example.json', 'scripts/version.sh'):
                 shutil.copyfile(ROOT / name, root / name)
+            for directory in ('tools', 'plugins'):
+                shutil.copytree(ROOT / directory, root / directory)
             for name in ('start.sh', 'reset-password.sh', 'start.bat'):
                 data = (ROOT / name).read_bytes().replace(b'\r\n', b'\n')
                 (root / name).write_bytes(data.replace(b'\n', b'\r\n'))
@@ -176,6 +178,8 @@ exit 1
             for path in archives:
                 with self.subTest(archive=path.name), zipfile.ZipFile(path) as archive:
                     prefix = path.stem + '/'
+                    self.assertIn(prefix + 'tools/http_headers.yaml', archive.namelist())
+                    self.assertIn(prefix + 'plugins/artex-browser-extension/manifest.json', archive.namelist())
                     if 'windows' in path.name:
                         data = archive.read(prefix + 'start.bat')
                         data.decode('ascii')

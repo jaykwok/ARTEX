@@ -55,6 +55,26 @@ func newGuard(ic *intercept.Interceptor) *Guard {
 func (g *Guard) Hooks() *hook.Registry { return g.reg }
 
 func (g *Guard) preToolUse(ctx context.Context, ev hook.Event) hook.Result {
+	// SDK deferred dispatch calls the inner tool directly. Review its real name
+	// and arguments, then re-envelope an approved edit for ExecuteExtraTool.
+	if ev.ToolName == "ExecuteExtraTool" {
+		var in struct {
+			Name   string          `json:"tool_name"`
+			Params json.RawMessage `json:"params"`
+		}
+		if json.Unmarshal(ev.Input, &in) != nil || in.Name == "" || in.Name == "ExecuteExtraTool" {
+			return g.block(ev.ToolName, "invalid deferred tool call", "")
+		}
+		if len(in.Params) == 0 {
+			in.Params = json.RawMessage(`{}`)
+		}
+		res := g.preToolUse(ctx, hook.Event{Type: ev.Type, ToolName: in.Name, Input: in.Params})
+		if len(res.UpdatedInput) > 0 {
+			in.Params = res.UpdatedInput
+			res.UpdatedInput, _ = json.Marshal(map[string]any{"tool_name": in.Name, "params": in.Params})
+		}
+		return res
+	}
 	// Extract the shell-command surface for the audit log: Bash + the interactive-shell
 	// tools (shell_open's command, shell_send's text). Destructive/exfil gating is no
 	// longer hard-coded here — it now lives in the DB intercept rules, evaluated by
@@ -98,6 +118,25 @@ func (g *Guard) applyIntercept(ctx context.Context, ev hook.Event) hook.Result {
 		}
 		dec = d
 	}
+	original := ev.Input
+	if (dec.Action == "allow" || dec.Action == "ask") && len(dec.EditedArguments) > 0 {
+		if rule, matched := g.interceptor.Match(ev.ToolName, dec.EditedArguments); matched && rule.Action != "allow" {
+			if rule.Action == "deny" {
+				g.interceptor.Log(ctx, intercept.ConvIDFromContext(ctx), rule, ev.ToolName, dec.EditedArguments, "denied")
+				return g.block(ev.ToolName, systemBlockMessage(rule.Message), "")
+			}
+			dec.Action = "ask"
+		}
+		if !intercept.NarrowingEdit(original, dec.EditedArguments) {
+			dec.Action = "ask"
+		}
+		dec.Message += "\n改参规则：" + dec.RuleCode + "\n原参数：" + string(original) + "\n执行参数：" + string(dec.EditedArguments)
+		ev.Input = dec.EditedArguments
+		// Rewrites requiring review never inherit an auto-allow timeout.
+		dec.TimeoutEnabled = true
+		dec.TimeoutSeconds = 300
+		dec.TimeoutAction = "deny"
+	}
 	switch dec.Action {
 	case "deny":
 		// 观测:deny 命中不阻塞审批,直接记一条 denied（历史/任务拦截页可见）。
@@ -106,7 +145,7 @@ func (g *Guard) applyIntercept(ctx context.Context, ev hook.Event) hook.Result {
 	case "allow":
 		// Record explicit rule and model approvals so review details remain auditable.
 		g.interceptor.Log(ctx, intercept.ConvIDFromContext(ctx), dec, ev.ToolName, ev.Input, "allowed")
-		return hook.Result{}
+		return hook.Result{UpdatedInput: dec.EditedArguments}
 	case "ask":
 		// If the worker context is already cancelled (task stopped / killed), block
 		// immediately without creating a pending record — avoids orphaned DB entries
@@ -118,7 +157,7 @@ func (g *Guard) applyIntercept(ctx context.Context, ev hook.Event) hook.Result {
 		if !g.interceptor.HandleAsk(ctx, convID, dec, ev.ToolName, ev.Input) {
 			return g.block(ev.ToolName, systemBlockMessage("人工审批未通过（用户拒绝或审批超时）"), "")
 		}
-		return hook.Result{}
+		return hook.Result{UpdatedInput: dec.EditedArguments}
 	}
 	return hook.Result{}
 }

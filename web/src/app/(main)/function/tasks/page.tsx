@@ -777,7 +777,11 @@ export default function TasksPage() {
 
   return (
     <Tabs value={activeTab} onValueChange={setActiveTab} className="gap-4">
-      <TabsList className="mx-4 lg:mx-6">
+      <div>
+        <h1 className="text-xl font-semibold tracking-tight">任务</h1>
+        <p className="text-sm text-muted-foreground">查看运行状态、管理任务与归档，点击任务名称进入详情。</p>
+      </div>
+      <TabsList>
         <TabsTrigger value="current">当前任务</TabsTrigger>
         <TabsTrigger value="archived">已归档</TabsTrigger>
       </TabsList>
@@ -788,10 +792,11 @@ export default function TasksPage() {
               <div className="relative w-full sm:max-w-xs">
                 <SearchIcon className="text-muted-foreground pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2" />
                 <Input
-                  placeholder="搜索描述 / 目标 / ID"
+                  placeholder="搜索名称 / 描述 / 目标 / ID"
+                  aria-label="搜索任务"
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
-                  className="pl-8"
+                  className="pr-8 pl-8"
                 />
                 {query && (
                   <button
@@ -805,7 +810,7 @@ export default function TasksPage() {
                 )}
               </div>
               <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as TaskStatus | "all")}>
-                <SelectTrigger className="w-36">
+                <SelectTrigger className="w-36" aria-label="筛选任务状态">
                   <SelectValue placeholder="状态" />
                 </SelectTrigger>
                 <SelectContent>
@@ -820,7 +825,7 @@ export default function TasksPage() {
                 </SelectContent>
               </Select>
               <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-                <SelectTrigger className="w-40">
+                <SelectTrigger className="w-40" aria-label="筛选任务分类">
                   <SelectValue placeholder="任务分类" />
                 </SelectTrigger>
                 <SelectContent>
@@ -838,6 +843,9 @@ export default function TasksPage() {
               <span className="text-muted-foreground text-xs tabular-nums">
                 {filtered.length}/{tasks.length} 条
               </span>
+              {(query || statusFilter !== "all" || categoryFilter !== "all") && (
+                <Button size="sm" variant="ghost" onClick={() => { setQuery(""); setStatusFilter("all"); setCategoryFilter("all"); }}><XIcon /> 清除筛选</Button>
+              )}
               {selectedIds.size > 0 && (
                 <>
                   <span className="text-xs tabular-nums">已选 {selectedIds.size} 个</span>
@@ -1369,7 +1377,7 @@ function TaskNameEditor({ task, onRename }: { task: Task; onRename: (task: Task,
         className="min-w-0 truncate rounded-sm hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         title={task.name?.trim() ? task.name : task.description}
       >
-        {task.name?.trim() ? task.name : <span className="text-muted-foreground">未命名</span>}
+        {task.name?.trim() || task.description || `任务 #${task.id}`}
       </Link>
       <Button
         type="button"

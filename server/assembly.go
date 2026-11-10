@@ -69,6 +69,7 @@ func wireAgentAugment(pg *db.DB, skillDir string, hostTools func() ([]actool.Cor
 		var closers []io.Closer
 		serverTools := map[string][]string{} // server name → its tool names
 		var allNames, globalNames []string
+		shortDescriptions := map[string]string{}
 		globalSet := map[string]bool{}
 		{
 			mcpIDs, _ := pg.AgentVisible(a.ID, "mcp")
@@ -150,7 +151,15 @@ func wireAgentAugment(pg *db.DB, skillDir string, hostTools func() ([]actool.Cor
 		// their schema is withheld (SearchExtraTools/ExecuteExtraTool), same as MCP.
 		if hostTools != nil {
 			ht, deferredBinds := hostTools()
-			extra = append(extra, ht...)
+			for _, tool := range ht {
+				if scoped, ok := tool.(interface{ AllowedAgent(string) bool }); ok && !scoped.AllowedAgent(a.Key) {
+					continue
+				}
+				extra = append(extra, tool)
+				if short, ok := tool.(interface{ ShortDescription() string }); ok {
+					shortDescriptions[tool.Name()] = short.ShortDescription()
+				}
+			}
 			for name, boundAgents := range deferredBinds {
 				if !contains(boundAgents, a.Key) {
 					continue // only defer names this agent is actually bound to
@@ -170,10 +179,11 @@ func wireAgentAugment(pg *db.DB, skillDir string, hostTools func() ([]actool.Cor
 			}
 		}
 		def := agent.DeferredInfo{
-			Deferred:    allNames,
-			GlobalNames: globalNames,
-			Unlock:      unlock,
-			UnlockSkill: unlockSkill,
+			Deferred:          allNames,
+			GlobalNames:       globalNames,
+			ShortDescriptions: shortDescriptions,
+			Unlock:            unlock,
+			UnlockSkill:       unlockSkill,
 		}
 		return extra, def, cleanup
 	}
