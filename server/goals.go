@@ -197,6 +197,14 @@ func (s *Server) admitTaskWhen(t *Task, mode string, requirePaused bool) (queued
 		// otherwise the old settling flag would make every worker skip forever.
 		s.engine.resetTimeoutRevival(t.ID)
 	}
+	if wasTerminal && status == "running" && t.TimeoutSeconds > 0 {
+		// done/failed 复活同样要重盖 deadline: 上一轮的 deadline_at 早已过期,
+		// 不重盖的话 stampFirstRun 的幂等守卫会让 worker 的 run ctx 被夹逼到
+		// 秒级预算, 启动即死。timeout 分支上面已走 resetTimeoutRevival(只清门),
+		// 这里对其余终态补上真正的重盖章。排队场景下预算从入场起算,
+		// 与 bootstrap 首跑一致。
+		s.engine.restampDeadline(t.ID)
+	}
 	if shouldQueue {
 		if !wasQueued {
 			summary := fmt.Sprintf("已排队：达到并发上限 %d，等待空位后自动开始", limit)

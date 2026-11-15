@@ -115,6 +115,23 @@ func (e *Engine) stampFirstRun(t *Task) {
 // clockCtx layers the task's TaskClock (absolute deadline) onto a run's context so
 // worker/planner can clamp their wall-clock budget and pick per-run vs task-timeout
 // wrap-up words. final marks the coordinator-driven terminal planner round.
+// restampDeadline 终态任务复活时重盖 deadline: 先置 stamped 守卫再调用 RestampTaskDeadline
+// (stampFirstRun 的 LoadOrStore 守卫在复活场景会挡住重盖), 并重新填充进程内 deadline map,
+// 让 taskDeadline/clockCtx 立即看到新预算。失败时回滚 stamped, 允许后续重试。
+func (e *Engine) restampDeadline(taskID string) {
+	e.stamped.Store(taskID, true)
+	dl, err := e.m.RestampTaskDeadline(taskID)
+	if err != nil {
+		log.Printf("[deadline] task %s 复活重盖 deadline 失败: %v", taskID, err)
+		e.stamped.Delete(taskID) // 允许后续 stampFirstRun 重试
+		return
+	}
+	e.deadline.Store(taskID, dl)
+	if dl > 0 {
+		log.Printf("[deadline] task %s 终态复活, 重新盖章截止于 %s", taskID, time.Unix(dl, 0).Format("2006-01-02 15:04:05"))
+	}
+}
+
 func (e *Engine) clockCtx(base context.Context, t *Task, final bool) context.Context {
 	dl := e.taskDeadline(t)
 	if dl <= 0 && !final {
