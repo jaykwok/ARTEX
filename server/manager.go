@@ -1150,6 +1150,8 @@ func (m *Manager) SetTaskPaused(id string, paused bool) error {
 // concurrency scheduler. Keeping status, paused and queue metadata in one UPDATE
 // prevents a failed resume from leaving a task half-revived (for example running
 // but still user-paused, or dequeued without an Engine start).
+// Leaving a terminal state also clears the previous run's clock in this UPDATE;
+// the next real Planner/Worker call starts a new budget after any FIFO wait.
 //
 // preservePosition applies only when the row is already queued. A repeated
 // admission keeps its FIFO timestamp; a task that was explicitly paused and is
@@ -1190,11 +1192,11 @@ func (m *Manager) ApplyTaskAdmission(id, expectedStatus, status string, queued b
 	        ELSE 'resume'
 	    END,
 	    first_run_at=CASE
-	        WHEN $6='timeout' AND $2 NOT IN ('done','failed','timeout') THEN NULL
+	        WHEN $6 IN ('done','failed','timeout') AND $2 NOT IN ('done','failed','timeout') THEN NULL
 	        ELSE first_run_at
 	    END,
 	    deadline_at=CASE
-	        WHEN $6='timeout' AND $2 NOT IN ('done','failed','timeout') THEN NULL
+	        WHEN $6 IN ('done','failed','timeout') AND $2 NOT IN ('done','failed','timeout') THEN NULL
 	        ELSE deadline_at
 	    END
 	WHERE id=$1 AND deleted_at IS NULL AND status=$6
@@ -1387,41 +1389,6 @@ func (m *Manager) StampTaskFirstRun(id string) (int64, error) {
 // SetTaskStatusGuarded sets a TERMINAL status only if the task isn't already terminal
 // (resolves the completed↔timeout race — first terminal writer wins). Reflects the
 // won status on the live handle. won=false means another terminal already stuck.
-// RestampTaskDeadline 强制重盖任务的运行时钟(first_run_at/deadline_at), 用于终态任务
-// 复活(see goals.go admitTaskWhen): StampTaskFirstRun 的幂等语义在复活场景下会让过期
-// deadline 原样继承, 必须无视幂等直接重写。同步刷新 live handle 上的 deadline_at。
-func (m *Manager) RestampTaskDeadline(id string) (int64, error) {
-	m.taskStateMu.Lock()
-	defer m.taskStateMu.Unlock()
-	n, err := strconv.ParseInt(id, 10, 64)
-	if err != nil {
-		return 0, err
-	}
-	m.mu.RLock()
-	timeout := 0
-	if t := m.tasks[id]; t != nil {
-		timeout = t.TimeoutSeconds
-	}
-	m.mu.RUnlock()
-	dl, err := m.pg.RestampFirstRun(n, timeout)
-	if err != nil {
-		return 0, err
-	}
-	var dlUnix int64
-	if dl != nil {
-		dlUnix = dl.Unix()
-	}
-	m.mu.Lock()
-	if t := m.tasks[id]; t != nil {
-		t.updateLifecycle(func(state *taskLifecycleState) {
-			state.FirstRunAt = time.Now().Unix()
-			state.DeadlineAt = dlUnix
-		})
-	}
-	m.mu.Unlock()
-	return dlUnix, nil
-}
-
 func (m *Manager) SetTaskStatusGuarded(id, status string) (won bool, err error) {
 	m.taskStateMu.Lock()
 	defer m.taskStateMu.Unlock()

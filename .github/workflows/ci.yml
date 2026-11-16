@@ -43,6 +43,8 @@ jobs:
           go test ./... -count=1 -timeout 180s
           go vet ./...
           go mod verify
+      - name: Task revival concurrency regressions
+        run: go test -race ./server -run '^(TestTerminalTask|TestTimedOutTask|TestRunningTaskAdmission|TestStopTask)' -count=1 -timeout 180s
       - name: Go vulnerability gate
         run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
       - name: Frontend checks and dependency gate

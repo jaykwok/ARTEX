@@ -506,23 +506,6 @@ UPDATE tasks
 	return deadline, err
 }
 
-// RestampFirstRun 重新盖章任务的运行时钟: first_run_at=now、deadline_at=now+timeoutSeconds。
-// 与 StampFirstRun 的幂等设计互补: 终态任务(done/failed)被 set_goals/add_intent 拉回 running
-// 时, 原 deadline 已经过期, 若不重盖, worker 启动即被 clockCtx 夹逼到 0 预算(秒死)。
-// timeoutSeconds<=0 时清空 deadline_at(不限时)。
-func (d *DB) RestampFirstRun(id int64, timeoutSeconds int) (*time.Time, error) {
-	var deadline *time.Time
-	err := d.QueryRow(`
-UPDATE tasks
-   SET first_run_at = now(),
-       deadline_at  = CASE
-           WHEN $2 > 0 THEN time_add(now(), $2)
-           ELSE NULL END
- WHERE id = $1
- RETURNING deadline_at`, id, timeoutSeconds).Scan(&deadline)
-	return deadline, err
-}
-
 // DeleteTask preserves the historical behavior: remove the task and its
 // exploration subgraph while retaining global assets.
 func (d *DB) DeleteTask(id int64) error {

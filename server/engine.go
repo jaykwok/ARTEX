@@ -127,11 +127,12 @@ type Engine struct {
 	plannerRound sync.Map // taskID -> int, planner round counter (for UI round separators)
 
 	// 任务级超时(见 docs/任务级超时与收尾设计.md):
-	settling     sync.Map // taskID -> bool, 任务已进入收尾时序(停止派/领新意图)
-	deadline     sync.Map // taskID -> int64 unix, 绝对截止时刻(首次运行时盖章;0/缺省=不限)
-	stamped      sync.Map // taskID -> bool, first_run_at 是否已盖章(本进程内只盖一次)
-	inflight     sync.Map // taskID -> *int64, 在跑的 planner.Plan + worker.Execute 计数(用于 drain)
-	coordStarted sync.Map // taskID -> bool, deadline 协调器是否已启动(Run/reload 去重)
+	clockMu      sync.Mutex // serializes clock caches, first-run writes and coordinator registration
+	settling     sync.Map   // taskID -> bool, 任务已进入收尾时序(停止派/领新意图)
+	deadline     sync.Map   // taskID -> int64 unix, 绝对截止时刻(首次运行时盖章;0/缺省=不限)
+	stamped      sync.Map   // taskID -> bool, first_run_at 是否已盖章(每轮运行只盖一次)
+	inflight     sync.Map   // taskID -> *int64, 在跑的 planner.Plan + worker.Execute 计数(用于 drain)
+	coordStarted sync.Map   // taskID -> *deadlineCoordinatorRun, current run's timer (Run/reload deduplication)
 
 	// resolve returns a task's dedicated planner/worker (wired by the server as the
 	// authoritative task-router). nil,nil means this task is deliberately unavailable
@@ -147,6 +148,11 @@ type taskRuntime struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
+}
+
+type deadlineCoordinatorRun struct {
+	cancel context.CancelFunc
+	done   chan struct{}
 }
 
 type workExecution struct {
@@ -271,10 +277,12 @@ func (e *Engine) StopTask(taskID string) {
 	e.dropCnt.Delete(taskID)
 	e.plannerRound.Delete(taskID)
 	e.settling.Delete(taskID)
+	e.clockMu.Lock()
 	e.deadline.Delete(taskID)
 	e.stamped.Delete(taskID)
-	e.inflight.Delete(taskID)
 	e.coordStarted.Delete(taskID)
+	e.clockMu.Unlock()
+	e.inflight.Delete(taskID)
 	e.deleteMu.Lock()
 	e.deleting.Delete(taskID)
 	e.deleteMu.Unlock()
