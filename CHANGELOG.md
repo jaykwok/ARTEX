@@ -12,6 +12,10 @@
 - 普通暂停、继续和运行中追加工作保持当前轮次的截止时间。
 - 增加任务恢复、排队、写入失败和协调器退出的回归测试，并在 CI 中运行相关并发检测。
 
+### 安全更新
+
+- 构建工具链升级至 Go 1.27.4，修复 `net/http` 的 [GO-2026-6859](https://pkg.go.dev/vuln/GO-2026-6859)；同步 Docker 源码构建镜像与安装要求。
+
 关联 PR：[#1](https://github.com/jaykwok/ARTEX/pull/1)（@qcnhy）。
 
 [完整变更](https://github.com/jaykwok/ARTEX/compare/v1.0.4...v1.0.5)
