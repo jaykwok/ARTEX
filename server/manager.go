@@ -1150,6 +1150,8 @@ func (m *Manager) SetTaskPaused(id string, paused bool) error {
 // concurrency scheduler. Keeping status, paused and queue metadata in one UPDATE
 // prevents a failed resume from leaving a task half-revived (for example running
 // but still user-paused, or dequeued without an Engine start).
+// Leaving a terminal state also clears the previous run's clock in this UPDATE;
+// the next real Planner/Worker call starts a new budget after any FIFO wait.
 //
 // preservePosition applies only when the row is already queued. A repeated
 // admission keeps its FIFO timestamp; a task that was explicitly paused and is
@@ -1190,11 +1192,11 @@ func (m *Manager) ApplyTaskAdmission(id, expectedStatus, status string, queued b
 	        ELSE 'resume'
 	    END,
 	    first_run_at=CASE
-	        WHEN $6='timeout' AND $2 NOT IN ('done','failed','timeout') THEN NULL
+	        WHEN $6 IN ('done','failed','timeout') AND $2 NOT IN ('done','failed','timeout') THEN NULL
 	        ELSE first_run_at
 	    END,
 	    deadline_at=CASE
-	        WHEN $6='timeout' AND $2 NOT IN ('done','failed','timeout') THEN NULL
+	        WHEN $6 IN ('done','failed','timeout') AND $2 NOT IN ('done','failed','timeout') THEN NULL
 	        ELSE deadline_at
 	    END
 	WHERE id=$1 AND deleted_at IS NULL AND status=$6

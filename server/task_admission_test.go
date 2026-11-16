@@ -250,7 +250,9 @@ func TestTimedOutTaskRevivalResetsClockAndSettlingAcrossFIFO(t *testing.T) {
 	s.engine.settling.Store(task.ID, true)
 	s.engine.deadline.Store(task.ID, oldClock.DeadlineAt)
 	s.engine.stamped.Store(task.ID, true)
-	s.engine.coordStarted.Store(task.ID, true)
+	coordinator := &deadlineCoordinatorRun{cancel: func() {}, done: make(chan struct{})}
+	close(coordinator.done)
+	s.engine.coordStarted.Store(task.ID, coordinator)
 
 	queued, err := s.admitTask(task, "resume")
 	if err != nil {

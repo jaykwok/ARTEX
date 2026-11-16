@@ -191,7 +191,9 @@ func TestStopTaskCancelsRuntimeAndClearsLifecycleState(t *testing.T) {
 	e.lastAct.Store(taskID, int64(1))
 	e.paused.Store(taskID, true)
 	e.plannerRound.Store(taskID, 3)
-	e.coordStarted.Store(taskID, true)
+	coordinator := &deadlineCoordinatorRun{cancel: func() {}, done: make(chan struct{})}
+	close(coordinator.done)
+	e.coordStarted.Store(taskID, coordinator)
 	e.deleteMu.RUnlock()
 
 	done := make(chan struct{})

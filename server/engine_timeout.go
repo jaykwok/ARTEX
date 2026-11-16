@@ -68,6 +68,8 @@ func (e *Engine) inflightCount(taskID string) int64 {
 // map (stamped this session); falls back to the DB-loaded value (restart), seeding
 // the map. 0 = no timeout / not yet stamped.
 func (e *Engine) taskDeadline(t *Task) int64 {
+	e.clockMu.Lock()
+	defer e.clockMu.Unlock()
 	if v, ok := e.deadline.Load(t.ID); ok {
 		return v.(int64)
 	}
@@ -79,12 +81,13 @@ func (e *Engine) taskDeadline(t *Task) int64 {
 	return 0
 }
 
-// resetTimeoutRevival clears only the per-run timeout state after SQLite has
-// atomically committed timeout -> running and reset first_run_at/deadline_at. The
+// resetTerminalRevival clears per-run timeout state after SQLite has atomically
+// committed a terminal -> running transition and reset first_run_at/deadline_at. The
 // configured TimeoutSeconds remains on Task, so the next real Planner/Worker run
-// stamps a fresh full budget. coordStarted is reset because the coordinator that
-// produced the timeout has already completed (or is in its final return path).
-func (e *Engine) resetTimeoutRevival(taskID string) {
+// stamps a fresh full budget. Admission has already stopped the old coordinator.
+func (e *Engine) resetTerminalRevival(taskID string) {
+	e.clockMu.Lock()
+	defer e.clockMu.Unlock()
 	e.settling.Delete(taskID)
 	e.deadline.Delete(taskID)
 	e.stamped.Delete(taskID)
@@ -96,6 +99,12 @@ func (e *Engine) resetTimeoutRevival(taskID string) {
 func (e *Engine) stampFirstRun(t *Task) {
 	if t.TimeoutSeconds <= 0 {
 		return
+	}
+	e.clockMu.Lock()
+	defer e.clockMu.Unlock()
+	lifecycle := t.lifecycleSnapshot()
+	if e.IsPaused(t.ID) || lifecycle.Paused || lifecycle.Queued || isTerminalStatus(lifecycle.Status) {
+		return // a cancelled run must not start the next budget during admission
 	}
 	if _, loaded := e.stamped.LoadOrStore(t.ID, true); loaded {
 		return
@@ -133,17 +142,39 @@ func (e *Engine) startDeadlineCoordinator(ctx context.Context, t *Task) {
 		return
 	}
 	e.deleteMu.RLock()
-	if e.IsDeleting(t.ID) {
-		e.deleteMu.RUnlock()
+	defer e.deleteMu.RUnlock()
+	e.clockMu.Lock()
+	defer e.clockMu.Unlock()
+	if e.IsDeleting(t.ID) || isTerminalStatus(t.lifecycleSnapshot().Status) {
 		return
 	}
-	if _, loaded := e.coordStarted.LoadOrStore(t.ID, true); loaded {
-		e.deleteMu.RUnlock()
+	if _, loaded := e.coordStarted.Load(t.ID); loaded {
 		return
 	}
 	rt := e.registerTaskRoutines(ctx, t.ID, 1)
-	e.deleteMu.RUnlock()
-	runTaskRoutine(rt, func(loopCtx context.Context) { e.deadlineCoordinator(loopCtx, t) })
+	loopCtx, cancel := context.WithCancel(rt.ctx)
+	run := &deadlineCoordinatorRun{cancel: cancel, done: make(chan struct{})}
+	e.coordStarted.Store(t.ID, run)
+	runTaskRoutine(rt, func(context.Context) {
+		defer close(run.done)
+		defer cancel()
+		e.deadlineCoordinator(loopCtx, t)
+	})
+}
+
+// stopDeadlineCoordinator waits for the previous timer and final planner round
+// before admission changes a terminal task back to running. Keep the registration
+// until the lifecycle commit succeeds, so repeated starts cannot overlap it.
+func (e *Engine) stopDeadlineCoordinator(taskID string) {
+	e.clockMu.Lock()
+	v, ok := e.coordStarted.Load(taskID)
+	if ok {
+		v.(*deadlineCoordinatorRun).cancel()
+	}
+	e.clockMu.Unlock()
+	if ok {
+		<-v.(*deadlineCoordinatorRun).done
+	}
 }
 
 // deadlineCoordinator waits until the task's absolute deadline, then runs the settle
@@ -182,6 +213,9 @@ func (e *Engine) deadlineCoordinator(ctx context.Context, t *Task) {
 
 // settleTask runs the ordered settle sequence once (§4 steps ①–⑥).
 func (e *Engine) settleTask(ctx context.Context, t *Task) {
+	if ctx.Err() != nil {
+		return
+	}
 	if !e.markSettling(t.ID) {
 		return
 	}
@@ -204,6 +238,9 @@ func (e *Engine) settleTask(ctx context.Context, t *Task) {
 
 	// ⑤ 终局一轮 planner(任务超时词,最后目标判定,不产新意图)。
 	met := e.runFinalPlannerRound(ctx, t)
+	if ctx.Err() != nil {
+		return
+	}
 	if !e.beginTaskOperation(t.ID) {
 		return
 	}

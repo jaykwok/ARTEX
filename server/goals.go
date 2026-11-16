@@ -184,6 +184,9 @@ func (s *Server) admitTaskWhen(t *Task, mode string, requirePaused bool) (queued
 	status := lifecycle.Status
 	if wasTerminal {
 		status = "running"
+		// Finish the old coordinator while the task is still terminal. Its timer
+		// or final planner round must not settle the next run after admission.
+		s.engine.stopDeadlineCoordinator(t.ID)
 	}
 	if err := s.m.ApplyTaskAdmission(t.ID, lifecycle.Status, status, shouldQueue, mode, wasQueued); err != nil {
 		if !engineWasPaused && !wasPaused && !wasQueued {
@@ -191,11 +194,11 @@ func (s *Server) admitTaskWhen(t *Task, mode string, requirePaused bool) (queued
 		}
 		return false, err
 	}
-	if lifecycle.Status == "timeout" && status == "running" {
-		// ApplyTaskAdmission reset this timed-out run's persisted clock. Clear the
+	if wasTerminal {
+		// ApplyTaskAdmission reset the previous run's persisted clock. Clear the
 		// matching Engine gates before either parking it in FIFO or starting work;
 		// otherwise the old settling flag would make every worker skip forever.
-		s.engine.resetTimeoutRevival(t.ID)
+		s.engine.resetTerminalRevival(t.ID)
 	}
 	if shouldQueue {
 		if !wasQueued {
@@ -245,7 +248,7 @@ func (s *Server) startAdmittedTask(t *Task, mode string) {
 	s.engine.Run(s.ctx, t)
 	s.engine.Resume(t)
 	// Run returns early for an already-started task. Explicitly ensure a timeout
-	// coordinator exists after resume; resetTimeoutRevival cleared the completed
+	// coordinator exists after resume; resetTerminalRevival cleared the completed
 	// coordinator's marker and the next real call will stamp a fresh deadline.
 	s.engine.startDeadlineCoordinator(s.ctx, t)
 }
